@@ -1,84 +1,201 @@
-//! FORTRAN Hello World on COR24 — minimal Yew/WASM live demo.
+//! FORTRAN Hello World on COR24 — multi-stage in-browser pipeline.
 //!
-//! The page embeds a pre-built `.lgo` produced upstream by the
-//! SNOBOL4-based FTI-0 compiler in `sw-cor24-fortran`. On mount we load
-//! the `.lgo` into a `cor24_emulator::EmulatorCore` and run it; UART
-//! output is rendered on the right.
-//!
-//! Until dcftn ships a real `examples/hello.lgo`, the file is committed
-//! as a 0-byte placeholder; in that mode the page shows a "pending"
-//! notice instead of attempting to run.
+//!   .f source  --[Compile  -> Rust-based FTI-0 compiler ]-->  .s
+//!      .s     --[Assemble -> cor24-assembler            ]-->  bytes + listing
+//!     bytes   --[Run      -> cor24-emulator             ]-->  UART output
+
+mod compiler;
+mod demos;
+mod editor;
+mod help;
+mod highlight;
+mod panels;
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use cor24_assembler::AssembledLine;
 use cor24_emulator::{EmulatorCore, StopReason};
+use wasm_bindgen::JsCast;
+use web_sys::HtmlSelectElement;
 use yew::prelude::*;
 
-const HELLO_F_SOURCE: &str = include_str!("../examples/hello.f");
-const HELLO_LGO_BYTES: &[u8] = include_bytes!("../examples/hello.lgo");
+use editor::Editor;
+use help::HelpModal;
+use panels::UartPanel;
 
-const MAX_INSTRUCTIONS_PER_TICK: u64 = 50_000;
 const TICK_INTERVAL_MS: u32 = 16;
+const RUN_BATCH: u64 = 100_000;
 
 #[function_component(App)]
 fn app() -> Html {
+    let source = use_state(|| demos::DEFAULT_SOURCE.to_string());
+
+    let asm = use_state(String::new);
+    let compile_error = use_state(|| None::<compiler::CompileError>);
+
+    let listing = use_state(Vec::<AssembledLine>::new);
+    let bytes_out = use_state(Vec::<u8>::new);
+    let assemble_error = use_state(|| None::<String>);
+
     let uart_output = use_state(String::new);
-    let status_msg = use_state(|| String::from("Loading..."));
-    let halted = use_state(|| false);
     let running = use_state(|| false);
+    let halted = use_state(|| false);
     let instr_count = use_state(|| 0u64);
+    let runtime_error = use_state(|| None::<String>);
+
+    let status_msg = use_state(|| String::from("Ready. Edit the source, then click Compile."));
+    let help_open = use_state(|| false);
 
     let emu: Rc<RefCell<EmulatorCore>> = use_mut_ref(EmulatorCore::new);
     let interval_handle = use_mut_ref(|| None::<gloo_timers::callback::Interval>);
 
-    let lgo_text = match std::str::from_utf8(HELLO_LGO_BYTES) {
-        Ok(s) => Some(s),
-        Err(_) => None,
+    let clear_downstream = {
+        let asm = asm.clone();
+        let compile_error = compile_error.clone();
+        let listing = listing.clone();
+        let bytes_out = bytes_out.clone();
+        let assemble_error = assemble_error.clone();
+        let uart_output = uart_output.clone();
+        let running = running.clone();
+        let halted = halted.clone();
+        let runtime_error = runtime_error.clone();
+        let interval_handle = interval_handle.clone();
+        move || {
+            *interval_handle.borrow_mut() = None;
+            asm.set(String::new());
+            compile_error.set(None);
+            listing.set(Vec::new());
+            bytes_out.set(Vec::new());
+            assemble_error.set(None);
+            uart_output.set(String::new());
+            running.set(false);
+            halted.set(false);
+            runtime_error.set(None);
+        }
     };
-    let lgo_present = !HELLO_LGO_BYTES.is_empty() && lgo_text.is_some();
 
-    let start = {
+    let on_source_change = {
+        let source = source.clone();
+        let clear_downstream = clear_downstream.clone();
+        let status_msg = status_msg.clone();
+        Callback::from(move |value: String| {
+            source.set(value);
+            clear_downstream();
+            status_msg.set("Edited \u{2014} click Compile.".into());
+        })
+    };
+
+    let on_demo_select = {
+        let source = source.clone();
+        let clear_downstream = clear_downstream.clone();
+        let status_msg = status_msg.clone();
+        Callback::from(move |e: Event| {
+            let Some(select) = e.target().and_then(|t| t.dyn_into::<HtmlSelectElement>().ok())
+            else {
+                return;
+            };
+            let value = select.value();
+            if value.is_empty() {
+                return;
+            }
+            select.set_value("");
+            if let Some(src) = demos::lookup(&value) {
+                source.set(src.to_string());
+                clear_downstream();
+                status_msg.set(format!("Loaded {value}. Click Compile."));
+            }
+        })
+    };
+
+    let do_compile = {
+        let source = source.clone();
+        let asm = asm.clone();
+        let compile_error = compile_error.clone();
+        let status_msg = status_msg.clone();
+        move || -> Option<String> {
+            let r = compiler::compile(&source);
+            if let Some(err) = r.error {
+                asm.set(String::new());
+                let line = err.line.map(|l| format!(" line {l}")).unwrap_or_default();
+                status_msg.set(format!("Compile error{line}"));
+                compile_error.set(Some(err));
+                None
+            } else {
+                compile_error.set(None);
+                asm.set(r.asm.clone());
+                let lines = r.asm.lines().count();
+                status_msg.set(format!("Compiled ({lines} lines of .s)"));
+                Some(r.asm)
+            }
+        }
+    };
+
+    let do_assemble = {
+        let listing = listing.clone();
+        let bytes_out = bytes_out.clone();
+        let assemble_error = assemble_error.clone();
+        let status_msg = status_msg.clone();
+        move |asm_text: &str| -> Option<Vec<u8>> {
+            let r = compiler::assemble(asm_text);
+            listing.set(r.listing.clone());
+            if let Some(e) = r.error {
+                assemble_error.set(Some(e));
+                bytes_out.set(Vec::new());
+                status_msg.set("Assembler error".into());
+                None
+            } else {
+                assemble_error.set(None);
+                bytes_out.set(r.bytes.clone());
+                status_msg.set(format!("Assembled ({} bytes)", r.bytes.len()));
+                Some(r.bytes)
+            }
+        }
+    };
+
+    let on_compile = {
+        let do_compile = do_compile.clone();
+        Callback::from(move |_: MouseEvent| {
+            do_compile();
+        })
+    };
+
+    let on_assemble = {
+        let do_compile = do_compile.clone();
+        let do_assemble = do_assemble.clone();
+        Callback::from(move |_: MouseEvent| {
+            if let Some(asm_text) = do_compile() {
+                do_assemble(&asm_text);
+            }
+        })
+    };
+
+    let on_run = {
+        let do_compile = do_compile.clone();
+        let do_assemble = do_assemble.clone();
         let emu = emu.clone();
         let interval_handle = interval_handle.clone();
         let uart_output = uart_output.clone();
-        let status_msg = status_msg.clone();
-        let halted = halted.clone();
         let running = running.clone();
+        let halted = halted.clone();
         let instr_count = instr_count.clone();
-        move || {
+        let runtime_error = runtime_error.clone();
+        let status_msg = status_msg.clone();
+        Callback::from(move |_: MouseEvent| {
             *interval_handle.borrow_mut() = None;
 
-            if !lgo_present {
-                status_msg.set(
-                    "Awaiting hello.lgo from dcftn (sw-cor24-fortran). \
-                     The page is wired; running the demo is gated on the upstream artifact."
-                        .into(),
-                );
-                halted.set(false);
-                running.set(false);
-                return;
-            }
-            let Some(content) = lgo_text else {
-                status_msg.set("hello.lgo is not valid UTF-8 — refusing to load.".into());
-                halted.set(false);
-                running.set(false);
-                return;
-            };
+            let Some(asm_text) = do_compile() else { return };
+            let Some(prog_bytes) = do_assemble(&asm_text) else { return };
 
             {
                 let mut e = emu.borrow_mut();
                 *e = EmulatorCore::new();
-                if let Err(err) = e.load_lgo(content, None) {
-                    status_msg.set(format!("Failed to load hello.lgo: {err}"));
-                    halted.set(false);
-                    running.set(false);
-                    return;
-                }
+                e.load_program(0, &prog_bytes);
+                e.load_program_extent(prog_bytes.len() as u32);
                 e.resume();
             }
-
             uart_output.set(String::new());
+            runtime_error.set(None);
             instr_count.set(0);
             halted.set(false);
             running.set(true);
@@ -86,15 +203,16 @@ fn app() -> Html {
 
             let emu = emu.clone();
             let uart_output = uart_output.clone();
-            let status_msg = status_msg.clone();
-            let halted = halted.clone();
             let running = running.clone();
+            let halted = halted.clone();
             let instr_count = instr_count.clone();
+            let runtime_error = runtime_error.clone();
+            let status_msg = status_msg.clone();
             let interval_handle2 = interval_handle.clone();
 
             let interval = gloo_timers::callback::Interval::new(TICK_INTERVAL_MS, move || {
                 let mut e = emu.borrow_mut();
-                let batch = e.run_batch(MAX_INSTRUCTIONS_PER_TICK);
+                let batch = e.run_batch(RUN_BATCH);
                 uart_output.set(e.get_uart_output().to_string());
                 instr_count.set(e.instructions_count());
 
@@ -106,10 +224,11 @@ fn app() -> Html {
                     }
                     StopReason::InvalidInstruction(op) => {
                         halted.set(true);
-                        status_msg.set(format!(
+                        runtime_error.set(Some(format!(
                             "Invalid instruction: {op:#04x} at PC={:#06x}",
                             e.pc()
-                        ));
+                        )));
+                        status_msg.set("Runtime error".into());
                         true
                     }
                     StopReason::Paused => {
@@ -118,114 +237,204 @@ fn app() -> Html {
                     }
                     _ => false,
                 };
-
                 if stop {
                     running.set(false);
                     *interval_handle2.borrow_mut() = None;
                 }
             });
             *interval_handle.borrow_mut() = Some(interval);
-        }
+        })
     };
 
-    {
-        let start = start.clone();
-        use_effect_with((), move |_| {
-            start();
-            || ()
-        });
-    }
+    let on_stop = {
+        let emu = emu.clone();
+        let interval_handle = interval_handle.clone();
+        let running = running.clone();
+        let status_msg = status_msg.clone();
+        Callback::from(move |_: MouseEvent| {
+            emu.borrow_mut().pause();
+            *interval_handle.borrow_mut() = None;
+            running.set(false);
+            status_msg.set("Stopped".into());
+        })
+    };
 
-    let on_run = {
-        let start = start.clone();
-        Callback::from(move |_: MouseEvent| start())
+    let open_help = {
+        let help_open = help_open.clone();
+        Callback::from(move |_: MouseEvent| help_open.set(true))
+    };
+    let close_help = {
+        let help_open = help_open.clone();
+        Callback::from(move |_: MouseEvent| help_open.set(false))
     };
 
     html! {
-        <main style="display:flex; flex-direction:column; min-height:100vh; padding:24px; gap:16px;">
-            <h1 style="font-size:1.4rem; color:#89b4fa;">
-                {"FORTRAN Hello World on COR24"}
-                <span style="font-size:0.85rem; color:#bac2de; margin-left:10px;">
-                    {"hello.lgo running live in the embedded COR24 emulator (WASM)"}
+        <main style="display:flex; flex-direction:column; height:100vh; padding:12px; gap:8px; box-sizing:border-box;">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <h1 style="font-size:1.2rem; color:#89b4fa; margin:0;">
+                    {"FORTRAN Hello World on COR24"}
+                </h1>
+                <span style="font-size:0.78rem; color:#bac2de;">
+                    {"FTI-0 \u{2192} cor24 asm \u{2192} cor24 bytes \u{2192} cor24 emulator. All in your browser."}
                 </span>
-            </h1>
+                <button onclick={open_help} title="Help"
+                    style="margin-left:auto; padding:4px 10px; \
+                           background:#313244; color:#cdd6f4; \
+                           border:1px solid #585b70; border-radius:5px; \
+                           font-size:0.85rem; cursor:pointer;">
+                    {"[?]"}
+                </button>
+            </div>
 
-            <div style="display:flex; gap:16px; flex-wrap:wrap;">
-                <div style="flex:1; min-width:320px; display:flex; flex-direction:column; gap:6px;">
-                    <label style="color:#cdd6f4; font-weight:600; font-size:0.95rem;">
-                        {"hello.f"}
+            <div style="display:flex; flex:1; gap:10px; min-height:0;">
+                // Col 1: editor
+                <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:4px;">
+                    <label style="color:#cdd6f4; font-weight:600; font-size:0.85rem;">
+                        {"FTI-0 source (.f)"}
                     </label>
-                    <pre style="margin:0; padding:14px; background:#181825; \
-                                border:1px solid #313244; border-radius:6px; \
-                                color:#cdd6f4; font-family:'SF Mono','Fira Code',monospace; \
-                                font-size:13px; line-height:1.5; white-space:pre; \
-                                overflow:auto;">
-                        { HELLO_F_SOURCE }
-                    </pre>
+                    <Editor value={AttrValue::from((*source).clone())} on_change={on_source_change} />
                 </div>
 
-                <div style="flex:1; min-width:320px; display:flex; flex-direction:column; gap:6px;">
-                    <label style="color:#cdd6f4; font-weight:600; font-size:0.95rem;">
-                        {"UART output"}
-                    </label>
-                    <pre style="margin:0; padding:14px; background:#11111b; \
-                                border:1px solid #313244; border-radius:6px; \
-                                color:#a6e3a1; font-family:'SF Mono','Fira Code',monospace; \
-                                font-size:13px; line-height:1.5; white-space:pre-wrap; \
-                                min-height:140px; overflow:auto;">
-                        { if uart_output.is_empty() && !*halted && !*running {
-                            html! { <span style="color:#a6adc8;">{"(no output yet)"}</span> }
+                // Col 2: compile output (top) / assembler output (bottom)
+                <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:8px;">
+                    <div style="flex:1; min-height:0; display:flex; flex-direction:column; gap:4px;">
+                        <label style="color:#cdd6f4; font-weight:600; font-size:0.85rem;">
+                            {"Compiler output: COR24 assembly (.s)"}
+                        </label>
+                        if let Some(err) = compile_error.as_ref() {
+                            <pre style="margin:0; padding:10px; background:#181825; \
+                                        border:1px solid #f38ba8; border-radius:6px; \
+                                        color:#f38ba8; font-size:0.82rem; \
+                                        white-space:pre-wrap; overflow:auto; flex:1; min-height:0;">
+                                if let Some(line) = err.line {
+                                    {format!("Line {line}: ")}
+                                }
+                                { &err.message }
+                            </pre>
                         } else {
-                            html! { {(*uart_output).clone()} }
-                        }}
-                    </pre>
+                            <pre style="margin:0; padding:10px; background:#181825; \
+                                        border:1px solid #313244; border-radius:6px; \
+                                        color:#cdd6f4; font-family:monospace; font-size:11.5px; \
+                                        line-height:1.45; white-space:pre; overflow:auto; \
+                                        flex:1; min-height:0;">
+                                { if asm.is_empty() {
+                                    html! { <span style="color:#a6adc8;">{"(click Compile)"}</span> }
+                                } else {
+                                    html! { (*asm).clone() }
+                                }}
+                            </pre>
+                        }
+                    </div>
+
+                    <div style="flex:1; min-height:0; display:flex; flex-direction:column; gap:4px;">
+                        <label style="color:#cdd6f4; font-weight:600; font-size:0.85rem;">
+                            {"Assembler output: listing"}
+                        </label>
+                        if let Some(err) = assemble_error.as_ref() {
+                            <pre style="margin:0; padding:10px; background:#181825; \
+                                        border:1px solid #f38ba8; border-radius:6px; \
+                                        color:#f38ba8; font-size:0.82rem; \
+                                        white-space:pre-wrap; overflow:auto; flex:1; min-height:0;">
+                                { err }
+                            </pre>
+                        } else {
+                            { panels::listing::render(&listing, None) }
+                        }
+                    </div>
+                </div>
+
+                // Col 3: emulator UART output
+                <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:4px;">
+                    <label style="color:#cdd6f4; font-weight:600; font-size:0.85rem;">
+                        {"Run output: UART"}
+                    </label>
+                    if let Some(err) = runtime_error.as_ref() {
+                        <pre style="margin:0; padding:10px; background:#181825; \
+                                    border:1px solid #f38ba8; border-radius:6px; \
+                                    color:#f38ba8; font-size:0.82rem; \
+                                    white-space:pre-wrap; overflow:auto;">
+                            { err }
+                        </pre>
+                    }
+                    <UartPanel
+                        output={AttrValue::from((*uart_output).clone())}
+                        running={*running}
+                        halted={*halted}
+                        placeholder={AttrValue::from("(click Run \u{2014} executes on the COR24 emulator)")}
+                    />
                 </div>
             </div>
 
-            <div style="display:flex; gap:12px; align-items:center;">
-                <button onclick={on_run}
-                    style="padding:8px 18px; background:#89b4fa; color:#1e1e2e; \
-                           border:none; border-radius:6px; font-size:1rem; font-weight:600; cursor:pointer;">
-                    { if *running { "Restart" } else { "Run" } }
+            // Button bar
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <button onclick={on_compile}
+                    style="padding:6px 14px; background:#cba6f7; color:#1e1e2e; \
+                           border:none; border-radius:5px; font-size:0.9rem; font-weight:600; cursor:pointer;">
+                    {"Compile"}
                 </button>
-                <span style="color:#bac2de; font-size:0.85rem;">{ &*status_msg }</span>
-                <span style="color:#a6adc8; font-size:0.85rem; margin-left:auto;">
+                <button onclick={on_assemble}
+                    style="padding:6px 14px; background:#f9e2af; color:#1e1e2e; \
+                           border:none; border-radius:5px; font-size:0.9rem; font-weight:600; cursor:pointer;">
+                    {"Assemble"}
+                </button>
+                <button onclick={on_run}
+                    style="padding:6px 14px; background:#89b4fa; color:#1e1e2e; \
+                           border:none; border-radius:5px; font-size:0.9rem; font-weight:600; cursor:pointer;">
+                    {"Run"}
+                </button>
+                if *running {
+                    <button onclick={on_stop}
+                        style="padding:6px 14px; background:#f38ba8; color:#1e1e2e; \
+                               border:none; border-radius:5px; font-size:0.9rem; font-weight:600; cursor:pointer;">
+                        {"Stop"}
+                    </button>
+                }
+                <select onchange={on_demo_select}
+                    style="padding:6px 12px; background:#313244; color:#cdd6f4; \
+                           border:1px solid #585b70; border-radius:5px; \
+                           font-size:0.85rem; cursor:pointer; margin-left:6px;">
+                    <option value="" selected=true disabled=true>{"Load demo..."}</option>
+                    { for demos::DEMOS.iter().map(|d| html! {
+                        <option value={d.id}>{format!("{} \u{2014} {}", d.id, d.label)}</option>
+                    }) }
+                </select>
+                <span style="color:#bac2de; font-size:0.82rem; margin-left:6px;">{ &*status_msg }</span>
+                <span style="color:#a6adc8; font-size:0.82rem; margin-left:auto;">
                     { format!("{} instructions", *instr_count) }
                 </span>
             </div>
 
-            if !lgo_present {
-                <div style="padding:10px 14px; background:#181825; border:1px solid #585b70; \
-                            border-radius:6px; color:#f9e2af; font-size:0.85rem;">
-                    {"hello.lgo is a 0-byte placeholder. dcftn's "}
-                    <a href="https://github.com/sw-embed/sw-cor24-fortran" target="_blank"
-                        style="color:#89b4fa;">{"sw-cor24-fortran"}</a>
-                    {" needs to ship the real artifact (Path A: hand-written hello.s assembled to hello.lgo). \
-                      Once relayed and dropped in examples/hello.lgo here, the page runs the program for real."}
-                </div>
-            }
-
-            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; \
-                        font-size:0.85rem; color:#bac2de; padding-top:8px; border-top:1px solid #313244;">
+            // Footer (cohort-standard build info)
+            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; \
+                        font-size:0.75rem; color:#bac2de; padding-top:6px; border-top:1px solid #313244;">
                 <span>{"\u{00a9} 2026 Michael A. Wright"}</span>
                 <span>{"\u{00b7}"}</span>
-                <span>{"MIT License"}</span>
+                <span>{"MIT"}</span>
                 <span>{"\u{00b7}"}</span>
                 <a href="https://github.com/sw-embed/web-sw-cor24-fortran" target="_blank"
                     style="color:#89b4fa; text-decoration:none;">{"Source"}</a>
                 <span>{"\u{00b7}"}</span>
                 <a href="https://github.com/sw-embed/sw-cor24-fortran" target="_blank"
-                    style="color:#89b4fa; text-decoration:none;">{"Upstream compiler"}</a>
+                    style="color:#89b4fa; text-decoration:none;">{"Upstream FTI-0 compiler"}</a>
                 <span>{"\u{00b7}"}</span>
                 <a href="https://makerlisp.com" target="_blank"
                     style="color:#89b4fa; text-decoration:none;">{"COR24-TB"}</a>
                 <span>{"\u{00b7}"}</span>
+                <a href="https://software-wrighter-lab.github.io/" target="_blank"
+                    style="color:#89b4fa; text-decoration:none;">{"Blog"}</a>
+                <span>{"\u{00b7}"}</span>
+                <a href="https://discord.com/invite/Ctzk5uHggZ" target="_blank"
+                    style="color:#89b4fa; text-decoration:none;">{"Discord"}</a>
+                <span>{"\u{00b7}"}</span>
+                <a href="https://www.youtube.com/@SoftwareWrighter" target="_blank"
+                    style="color:#89b4fa; text-decoration:none;">{"YouTube"}</a>
+                <span>{"\u{00b7}"}</span>
                 <span>{ format!("{} \u{00b7} {} \u{00b7} {}",
-                    env!("BUILD_HOST"),
-                    env!("BUILD_SHA"),
-                    env!("BUILD_TIMESTAMP"),
+                    env!("BUILD_HOST"), env!("BUILD_SHA"), env!("BUILD_TIMESTAMP"),
                 ) }</span>
             </div>
+
+            <HelpModal open={*help_open} on_close={close_help} />
         </main>
     }
 }

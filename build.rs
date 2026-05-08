@@ -1,8 +1,7 @@
 use std::process::Command;
 
 fn main() {
-    println!("cargo:rerun-if-changed=examples/hello.lgo");
-    println!("cargo:rerun-if-changed=examples/hello.f");
+    println!("cargo:rerun-if-changed=examples");
 
     let sha = Command::new("git")
         .args(["rev-parse", "--short", "HEAD"])
