@@ -1,5 +1,0 @@
-* FTI-0 Compiler Driver
-* Coordinates all compiler phases
-
-        OUTPUT = 'FTI-0 compiler not yet implemented'
-        END

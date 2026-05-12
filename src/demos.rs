@@ -1,9 +1,12 @@
-//! Bundled FTI-0 demos. These are dcftn's `examples/*.f` files,
-//! exercising the upstream Fortran compiler. Today only `hello.f`
-//! compiles end-to-end (via the Path-A short-circuit in
-//! `compiler.rs`); the others print dcftn's research-phase stub
-//! message. As dcftn ships fortran.sno phases, the others start
-//! compiling automatically.
+//! Bundled FTI-0 demos -- dcftn's `examples/*.f` files. Today the
+//! emit_asm.sno phase supports only `PRINT *, 'string'` plus
+//! PROGRAM/STOP/END boilerplate (dcftn's m3-emit-hello milestone),
+//! so hello.f compiles end-to-end. Inputs that use INTEGER, DO,
+//! GOTO, IF, DIMENSION, or integer PRINT will run through the chain
+//! but the emit_asm phase won't produce valid assembly for them yet.
+//! As dcftn ships further milestones (m4 = integer PRINT, then DO /
+//! GOTO / IF), refreshing `assets/emit_asm.sno` unblocks the
+//! relevant demos with no UI changes.
 
 pub const HELLO_F: &str = include_str!("../examples/hello.f");
 pub const ARRAY1_F: &str = include_str!("../examples/array1.f");
@@ -17,10 +20,10 @@ pub struct Demo {
 }
 
 pub const DEMOS: &[Demo] = &[
-    Demo { id: "hello.f",  label: "Hello, World!",                source: HELLO_F },
-    Demo { id: "array1.f", label: "Array initialization (waits)", source: ARRAY1_F },
-    Demo { id: "goto1.f",  label: "GOTO loop (waits)",            source: GOTO1_F },
-    Demo { id: "sum10.f",  label: "Sum 1..10 (waits)",            source: SUM10_F },
+    Demo { id: "hello.f",  label: "Hello, World! \u{2014} works today",            source: HELLO_F },
+    Demo { id: "array1.f", label: "Array init (needs DIMENSION + integer PRINT)",  source: ARRAY1_F },
+    Demo { id: "goto1.f",  label: "GOTO loop (needs INTEGER + GOTO + IF)",         source: GOTO1_F },
+    Demo { id: "sum10.f",  label: "Sum 1..10 (needs INTEGER + DO + integer PRINT)", source: SUM10_F },
 ];
 
 pub fn lookup(id: &str) -> Option<&'static str> {
