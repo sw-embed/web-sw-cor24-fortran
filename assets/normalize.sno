@@ -1,0 +1,125 @@
+*       FTI-0 Source Normalizer  --  snobol4/src/normalize.sno
+*
+*       Reads fixed-form .f source via RAWINPUT (case-preserving;
+*       loaded at INP_LOAD_ADDR = 0x090000) and emits one normalized
+*       statement record per logical statement:
+*               stmt<N> line=<M> label=<L> text=<text>
+*
+*       Normalization rules (per docs/subset-fti0.md and
+*       snobol4/tests/normalize/README.md):
+*       - lines beginning with 'C' or '*' in col 1 are comments and
+*         are skipped
+*       - blank lines (no text and no label) are skipped
+*       - cols 1-5 hold an optional numeric label; leading and
+*         trailing spaces are stripped
+*       - col 6 = blank or '0' (or absent on a short line)  =>  new
+*         statement
+*       - col 6 = anything else                             =>
+*         continuation; append cols 7-72 of this line to the prior
+*         statement
+*       - cols 7-72 = statement text (rstripped); chars beyond col 72
+*         are ignored by construction (we only extract 66 chars)
+*
+*       Toolchain history:
+*       1. dcsno-funcall-arithmetic.md fixed standalone arithmetic
+*          on function-call results, plus the bare nested-arg form
+*          SUBSTR(X, SIZE(X), 1). The SUBSTR-with-arith expressions
+*          below (SUBSTR(X, 1, SIZE(X) - 1)) work inline.
+*       2. A residual double-nesting bug remains in this build
+*          (snobol4.lgo 8756d420...): the pattern
+*          PREDICATE(SUBSTR(X, SIZE(X), 1), Y) -- a predicate whose
+*          nested SUBSTR has SIZE as its OWN nested arg -- always
+*          fires both :S and :F regardless of actual values. The two
+*          right-trim loops below carry a one-line workaround
+*          (extract SIZE to N first) for that case. Marked with
+*          * XXX dcsno-ident-double-nested-arg so they can be
+*          reverted when the follow-up fix lands.
+*
+*       State variables:
+*         STMT  -- emitted-statement counter (1-based)
+*         LNUM  -- physical-line counter (1-based)
+*         AT    -- accumulator: text of in-progress logical statement
+*         AL    -- accumulator: label of in-progress logical statement
+*         ALN   -- accumulator: starting physical line
+*         L     -- current physical line (just-read)
+*         LR    -- raw label field (cols 1-5 of L)
+*         C6    -- continuation char (col 6 of L)
+*         TR    -- raw text field (cols 7-72 of L)
+*         TXT   -- rstripped TR
+*         LBL   -- lstripped + rstripped LR
+
+        STMT = 0
+        LNUM = 0
+        AT   = ''
+        AL   = ''
+        ALN  = 0
+
+*       === Main loop: read one physical line per iteration. ===
+RD      L = RAWINPUT                            :F(FL)
+        LNUM = LNUM + 1
+
+*       Comment line? (col 1 == 'C' or '*')  Skip.
+        IDENT(SUBSTR(L, 1, 1), 'C')             :S(RD)
+        IDENT(SUBSTR(L, 1, 1), '*')             :S(RD)
+
+*       Extract the three column ranges by raw substring.
+        LR = SUBSTR(L, 1, 5)
+        C6 = SUBSTR(L, 6, 1)
+        TR = SUBSTR(L, 7, 66)
+
+*       Right-trim TR into TXT (drop trailing spaces).
+        TXT = TR
+RT      EQ(SIZE(TXT), 0)                        :S(RTD)
+*       XXX dcsno-ident-double-nested-arg: extract SIZE before IDENT
+        N = SIZE(TXT)
+        IDENT(SUBSTR(TXT, N, 1), ' ')           :F(RTD)
+        TXT = SUBSTR(TXT, 1, SIZE(TXT) - 1)
+        :(RT)
+RTD
+
+*       Left-trim LR into LBL (drop leading spaces).
+        LBL = LR
+LT      EQ(SIZE(LBL), 0)                        :S(LTD)
+        IDENT(SUBSTR(LBL, 1, 1), ' ')           :F(LTD)
+        LBL = SUBSTR(LBL, 2, SIZE(LBL) - 1)
+        :(LT)
+
+*       Right-trim LBL (drop trailing spaces).
+LTD     EQ(SIZE(LBL), 0)                        :S(LBLD)
+*       XXX dcsno-ident-double-nested-arg: extract SIZE before IDENT
+        N = SIZE(LBL)
+        IDENT(SUBSTR(LBL, N, 1), ' ')           :F(LBLD)
+        LBL = SUBSTR(LBL, 1, SIZE(LBL) - 1)
+        :(LTD)
+LBLD
+
+*       Blank-line check: skip if both label and text are empty.
+        EQ(SIZE(TXT), 0)                        :F(CL)
+        EQ(SIZE(LBL), 0)                        :S(RD)
+
+*       === Classify col 6: continuation vs new statement ===
+CL      IDENT(C6, '')                           :S(NS)
+        IDENT(C6, ' ')                          :S(NS)
+        IDENT(C6, '0')                          :S(NS)
+        :(CN)
+
+*       New statement: emit prior accumulator (if any), then start
+*       a fresh accumulator from this line's fields.
+NS      EQ(SIZE(AT), 0)                         :S(NSO)
+        STMT = STMT + 1
+        OUTPUT = 'stmt' STMT ' line=' ALN ' label=' AL ' text=' AT
+NSO     AT  = TXT
+        AL  = LBL
+        ALN = LNUM
+        :(RD)
+
+*       Continuation: append cols-7-72 (rstripped) text to the
+*       in-progress accumulator. Label and starting-line stay put.
+CN      AT = AT TXT
+        :(RD)
+
+*       === EOF: flush remaining accumulator if non-empty. ===
+FL      EQ(SIZE(AT), 0)                         :S(END)
+        STMT = STMT + 1
+        OUTPUT = 'stmt' STMT ' line=' ALN ' label=' AL ' text=' AT
+END

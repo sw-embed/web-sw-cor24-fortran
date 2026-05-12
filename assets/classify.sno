@@ -1,0 +1,94 @@
+*       FTI-0 Statement Classifier  --  snobol4/src/classify.sno
+*
+*       Reads normalized statement records (output of normalize.sno),
+*       identifies the statement kind, and emits the same record
+*       with a kind=<KIND> field inserted between label= and text=.
+*
+*       Input format (one record per line, RAWINPUT from 0x090000):
+*               stmt<N> line=<M> label=<L> text=<text>
+*
+*       Output format:
+*               stmt<N> line=<M> label=<L> kind=<KIND> text=<text>
+*
+*       Statement kinds (per docs/design.md):
+*               PROGRAM         "PROGRAM HELLO"
+*               INTEGER_DECL    "INTEGER I"
+*               DIMENSION_DECL  "DIMENSION A(10)"
+*               ASSIGN          "I = 0"        (text contains '='
+*                                               and isn't a keyword)
+*               GOTO            "GOTO 100"
+*               IF_GOTO         "IF (expr) GOTO 100"
+*               DO              "DO 100 I = 1, 10"
+*               CONTINUE        "CONTINUE"
+*               PRINT           "PRINT *, I"
+*               READ            "READ *, I"
+*               STOP            "STOP"
+*               END             "END"
+*
+*       Detection rule: extract the leading alphabetic-run word
+*       (FIRSTWORD) from <text>, match against the keyword set above.
+*       If FIRSTWORD is a keyword, emit that KIND. Otherwise if
+*       <text> contains '=' it's an assignment. Otherwise UNKNOWN
+*       (shouldn't happen on valid FTI-0 input).
+*
+*       Implementation notes:
+*       - This dialect's pattern library doesn't include POS(0) or
+*         ARB. Use BREAK / SPAN(<literal>) / literal / REM instead.
+*       - SPAN takes a LITERAL character class only, not a variable
+*         binding. Inline the alphabet at the use site.
+*       - We don't reparse the line into all fields; we capture just
+*         <text> with `LINE 'text=' REM . TXT`, classify it, then use
+*         in-place substitution `LINE 'text=' = 'kind=' KIND ' text='`
+*         to insert the kind field.
+
+LOOP    LINE = RAWINPUT                         :F(EOF)
+        LINE 'text=' REM . TXT                  :F(BAD)
+
+*       FIRSTWORD <- leading alpha run of TXT. Inline literal alphabet
+*       (SPAN(<variable>) doesn't work in this dialect).
+        FIRSTWORD = ''
+        TXT SPAN('ABCDEFGHIJKLMNOPQRSTUVWXYZ') . FIRSTWORD :F(NOWORD)
+
+*       Dispatch on FIRSTWORD. Single-direction :S goto on each.
+        IDENT(FIRSTWORD, 'PROGRAM')             :S(KPRG)
+        IDENT(FIRSTWORD, 'INTEGER')             :S(KINT)
+        IDENT(FIRSTWORD, 'DIMENSION')           :S(KDIM)
+        IDENT(FIRSTWORD, 'GOTO')                :S(KGOT)
+        IDENT(FIRSTWORD, 'IF')                  :S(KIF)
+        IDENT(FIRSTWORD, 'DO')                  :S(KDO)
+        IDENT(FIRSTWORD, 'CONTINUE')            :S(KCNT)
+        IDENT(FIRSTWORD, 'PRINT')               :S(KPRT)
+        IDENT(FIRSTWORD, 'READ')                :S(KRD)
+        IDENT(FIRSTWORD, 'STOP')                :S(KSTP)
+        IDENT(FIRSTWORD, 'END')                 :S(KEND)
+
+NOWORD
+*       FIRSTWORD wasn't a recognised keyword. If TXT contains '=',
+*       it's an assignment (e.g. "I = 0").
+        TXT '='                                 :S(KASN)
+
+*       Otherwise unknown (should not occur on valid FTI-0).
+        KIND = 'UNKNOWN'                        :(EMIT)
+
+KPRG    KIND = 'PROGRAM'                        :(EMIT)
+KINT    KIND = 'INTEGER_DECL'                   :(EMIT)
+KDIM    KIND = 'DIMENSION_DECL'                 :(EMIT)
+KGOT    KIND = 'GOTO'                           :(EMIT)
+KIF     KIND = 'IF_GOTO'                        :(EMIT)
+KDO     KIND = 'DO'                             :(EMIT)
+KCNT    KIND = 'CONTINUE'                       :(EMIT)
+KPRT    KIND = 'PRINT'                          :(EMIT)
+KRD     KIND = 'READ'                           :(EMIT)
+KSTP    KIND = 'STOP'                           :(EMIT)
+KEND    KIND = 'END'                            :(EMIT)
+KASN    KIND = 'ASSIGN'                         :(EMIT)
+
+*       Insert "kind=<KIND> " in front of "text=" in LINE, then emit.
+EMIT    LINE 'text=' = 'kind=' KIND ' text='
+        OUTPUT = LINE                           :(LOOP)
+
+*       Pass through malformed records unchanged.
+BAD     OUTPUT = LINE                           :(LOOP)
+
+EOF
+END
