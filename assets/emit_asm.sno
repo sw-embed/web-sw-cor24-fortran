@@ -1,0 +1,180 @@
+*       FTI-0 COR24 Assembly Emitter  --  snobol4/src/emit_asm.sno
+*
+*       Reads classified statement records (output of classify.sno)
+*       and emits COR24 assembly text on stdout.
+*
+*       Input format (one record per line, RAWINPUT from 0x090000):
+*               stmt<N> line=<M> label=<L> kind=<KIND> text=<text>
+*
+*       Output: COR24 .s on stdout that cor24-asm can assemble and
+*       cor24-emu can run.
+*
+*       Scope of THIS saga (m3-emit-hello, step 001 = halt skeleton):
+*       only PROGRAM, STOP, END kinds. No PRINT yet -- that follows
+*       in saga step 002. Compiled program loads, runs, and halts;
+*       no UART output.
+*
+*       Strategy:
+*       - Boilerplate (_start, _halt, _putc, _puts) emitted once at
+*         the top of the .s, always. The PROGRAM record triggers
+*         emission of `_main:` + prologue. STOP emits a branch to
+*         the function-end label LEND. END emits LEND: + epilogue
+*         + a trailing .data section.
+*       - Boilerplate is the same skeleton used in
+*         examples/hello.s (the hand-written Path A fixture).
+
+*       === Boilerplate emit (once, at start) ===
+        OUTPUT = '.text'
+        OUTPUT = ''
+        OUTPUT = '        .globl  _start'
+        OUTPUT = '_start:'
+        OUTPUT = '        la      r0,_main'
+        OUTPUT = '        jal     r1,(r0)'
+        OUTPUT = '_halt:'
+        OUTPUT = '        bra     _halt'
+        OUTPUT = ''
+        OUTPUT = '        .globl  _putc'
+        OUTPUT = '_putc:'
+        OUTPUT = '        push    fp'
+        OUTPUT = '        push    r2'
+        OUTPUT = '        push    r1'
+        OUTPUT = '        mov     fp,sp'
+        OUTPUT = 'L1:'
+        OUTPUT = '        la      r0,16711937'
+        OUTPUT = '        lbu     r0,0(r0)'
+        OUTPUT = '        push    r0'
+        OUTPUT = '        la      r0,128'
+        OUTPUT = '        mov     r1,r0'
+        OUTPUT = '        pop     r0'
+        OUTPUT = '        and     r0,r1'
+        OUTPUT = '        ceq     r0,z'
+        OUTPUT = '        brt     L2'
+        OUTPUT = '        bra     L1'
+        OUTPUT = 'L2:'
+        OUTPUT = '        lw      r0,9(fp)'
+        OUTPUT = '        push    r0'
+        OUTPUT = '        la      r0,16711936'
+        OUTPUT = '        mov     r1,r0'
+        OUTPUT = '        pop     r0'
+        OUTPUT = '        sb      r0,0(r1)'
+        OUTPUT = 'L0:'
+        OUTPUT = '        mov     sp,fp'
+        OUTPUT = '        pop     r1'
+        OUTPUT = '        pop     r2'
+        OUTPUT = '        pop     fp'
+        OUTPUT = '        jmp     (r1)'
+        OUTPUT = ''
+        OUTPUT = '        .globl  _puts'
+        OUTPUT = '_puts:'
+        OUTPUT = '        push    fp'
+        OUTPUT = '        push    r2'
+        OUTPUT = '        push    r1'
+        OUTPUT = '        mov     fp,sp'
+        OUTPUT = 'L4:'
+        OUTPUT = '        lw      r0,9(fp)'
+        OUTPUT = '        lbu     r0,0(r0)'
+        OUTPUT = '        ceq     r0,z'
+        OUTPUT = '        brt     L5'
+        OUTPUT = '        lw      r0,9(fp)'
+        OUTPUT = '        lbu     r0,0(r0)'
+        OUTPUT = '        push    r0'
+        OUTPUT = '        la      r0,_putc'
+        OUTPUT = '        jal     r1,(r0)'
+        OUTPUT = '        add     sp,3'
+        OUTPUT = '        lw      r0,9(fp)'
+        OUTPUT = '        push    r0'
+        OUTPUT = '        lc      r0,1'
+        OUTPUT = '        mov     r1,r0'
+        OUTPUT = '        pop     r0'
+        OUTPUT = '        add     r0,r1'
+        OUTPUT = '        sw      r0,9(fp)'
+        OUTPUT = '        bra     L4'
+        OUTPUT = 'L5:'
+        OUTPUT = 'L3:'
+        OUTPUT = '        mov     sp,fp'
+        OUTPUT = '        pop     r1'
+        OUTPUT = '        pop     r2'
+        OUTPUT = '        pop     fp'
+        OUTPUT = '        jmp     (r1)'
+        OUTPUT = ''
+
+*       String-literal pool state.
+        LITNUM = 0
+        LITDATA = ''
+        NL = CHAR(10)
+
+*       === Main loop: dispatch on classified records ===
+LOOP    LINE = RAWINPUT                         :F(EOF)
+        LINE 'kind=' BREAK(' ') . KIND ' text=' REM . TXT  :F(BAD)
+        IDENT(KIND, 'PROGRAM')                  :S(KPRG)
+        IDENT(KIND, 'PRINT')                    :S(KPRT)
+        IDENT(KIND, 'STOP')                     :S(KSTP)
+        IDENT(KIND, 'END')                      :S(KEND)
+*       Other kinds: silently skip in this saga.
+        :(LOOP)
+
+*       PROGRAM: emit _main label and prologue.
+KPRG    OUTPUT = '        .globl  _main'
+        OUTPUT = '_main:'
+        OUTPUT = '        push    fp'
+        OUTPUT = '        push    r2'
+        OUTPUT = '        push    r1'
+        OUTPUT = '        mov     fp,sp'
+        :(LOOP)
+
+*       PRINT: parse string literal from TXT, emit call to _puts,
+*       accumulate the literal (with appended \n\0) into LITDATA.
+*       Uses double-quoted "'" -- this dialect parses '''' as empty
+*       string (not a 1-char apostrophe per standard SNOBOL4).
+KPRT    TXT BREAK("'") "'" BREAK("'") . LIT     :F(BAD)
+*       Convert LIT to comma-separated decimal byte values in BYTES.
+        BYTES = ''
+        T = LIT
+B2B     EQ(SIZE(T), 0)                          :S(B2BD)
+        CH = SUBSTR(T, 1, 1)
+        ORD = 32
+ORDLP   EQ(ORD, 127)                            :S(ORDNF)
+        IDENT(CHAR(ORD), CH)                    :S(ORDFND)
+        ORD = ORD + 1                           :(ORDLP)
+ORDFND  BYTES = BYTES ORD ','
+        T = SUBSTR(T, 2, SIZE(T) - 1)
+        :(B2B)
+ORDNF   BYTES = BYTES '63,'
+        T = SUBSTR(T, 2, SIZE(T) - 1)
+        :(B2B)
+B2BD    BYTES = BYTES '10,0'
+*       Emit call to _puts on label _S<LITNUM>.
+        OUTPUT = '        la      r0,_S' LITNUM
+        OUTPUT = '        push    r0'
+        OUTPUT = '        la      r0,_puts'
+        OUTPUT = '        jal     r1,(r0)'
+        OUTPUT = '        add     sp,3'
+*       Accumulate literal in LITDATA pool (emitted at END).
+        LITDATA = LITDATA '_S' LITNUM ':' NL
+        LITDATA = LITDATA '        .byte   ' BYTES NL
+        LITNUM = LITNUM + 1
+        :(LOOP)
+
+*       STOP: branch to the function-end epilogue.
+KSTP    OUTPUT = '        lc      r0,0'
+        OUTPUT = '        bra     LEND'
+        :(LOOP)
+
+*       END: emit epilogue label + epilogue + trailing .data section
+*       with the accumulated string-literal pool.
+KEND    OUTPUT = 'LEND:'
+        OUTPUT = '        mov     sp,fp'
+        OUTPUT = '        pop     r1'
+        OUTPUT = '        pop     r2'
+        OUTPUT = '        pop     fp'
+        OUTPUT = '        jmp     (r1)'
+        OUTPUT = ''
+        OUTPUT = '        .data'
+        EQ(SIZE(LITDATA), 0)                    :S(LOOP)
+        OUTPUT = LITDATA
+        :(LOOP)
+
+BAD     OUTPUT = '* WARN: malformed input: ' LINE  :(LOOP)
+
+EOF
+END

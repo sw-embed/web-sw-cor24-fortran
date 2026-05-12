@@ -32,8 +32,7 @@ fn app() -> Html {
     let source = use_state(|| demos::DEFAULT_SOURCE.to_string());
 
     let asm = use_state(String::new);
-    let driver_log = use_state(String::new);
-    let via_path_a = use_state(|| false);
+    let trace = use_state(String::new);
     let compile_error = use_state(|| None::<compiler::CompileError>);
 
     let listing = use_state(Vec::<AssembledLine>::new);
@@ -54,8 +53,7 @@ fn app() -> Html {
 
     let clear_downstream = {
         let asm = asm.clone();
-        let driver_log = driver_log.clone();
-        let via_path_a = via_path_a.clone();
+        let trace = trace.clone();
         let compile_error = compile_error.clone();
         let listing = listing.clone();
         let bytes_out = bytes_out.clone();
@@ -68,8 +66,7 @@ fn app() -> Html {
         move || {
             *interval_handle.borrow_mut() = None;
             asm.set(String::new());
-            driver_log.set(String::new());
-            via_path_a.set(false);
+            trace.set(String::new());
             compile_error.set(None);
             listing.set(Vec::new());
             bytes_out.set(Vec::new());
@@ -117,28 +114,22 @@ fn app() -> Html {
     let do_compile = {
         let source = source.clone();
         let asm = asm.clone();
-        let driver_log = driver_log.clone();
-        let via_path_a = via_path_a.clone();
+        let trace = trace.clone();
         let compile_error = compile_error.clone();
         let status_msg = status_msg.clone();
         move || -> Option<String> {
-            status_msg.set("Compiling (running snobol4.lgo + fortran.sno)...".into());
+            status_msg.set("Compiling (normalize \u{2192} classify \u{2192} emit_asm)...".into());
             let r = compiler::compile(&source);
-            driver_log.set(r.driver_log);
-            via_path_a.set(r.via_path_a);
+            trace.set(r.trace);
             if let Some(err) = r.error {
                 asm.set(String::new());
-                status_msg.set("Compile failed (driver did not emit assembly)".into());
+                status_msg.set("Compile failed (chain produced no assembly)".into());
                 compile_error.set(Some(err));
                 None
             } else {
                 compile_error.set(None);
                 asm.set(r.asm.clone());
-                status_msg.set(if r.via_path_a {
-                    "Compiled (Path-A: dcftn's hello.s)".into()
-                } else {
-                    format!("Compiled ({} lines of .s)", r.asm.lines().count())
-                });
+                status_msg.set(format!("Compiled ({} lines of .s)", r.asm.lines().count()));
                 Some(r.asm)
             }
         }
@@ -311,11 +302,6 @@ fn app() -> Html {
                     <div style="flex:1; min-height:0; display:flex; flex-direction:column; gap:4px;">
                         <label style="color:#cdd6f4; font-weight:600; font-size:0.85rem;">
                             {"Compiler output: COR24 assembly (.s)"}
-                            if *via_path_a {
-                                <span style="color:#f9e2af; font-weight:400; margin-left:8px;">
-                                    {"\u{00b7} Path-A short-circuit"}
-                                </span>
-                            }
                         </label>
                         if let Some(err) = compile_error.as_ref() {
                             <pre style="margin:0; padding:10px; background:#181825; \
@@ -415,17 +401,17 @@ fn app() -> Html {
                 </span>
             </div>
 
-            if !driver_log.is_empty() {
+            if !trace.is_empty() {
                 <details style="font-size:0.82rem;">
                     <summary style="color:#bac2de; cursor:pointer; user-select:none;">
-                        {"SNOBOL4 driver output (snobol4.lgo running fortran.sno on your .f)"}
+                        {"Compiler trace (normalize \u{2192} classify \u{2192} emit_asm)"}
                     </summary>
                     <pre style="margin:6px 0 0 0; padding:8px; background:#11111b; \
                                 border:1px solid #313244; border-radius:4px; \
                                 color:#cdd6f4; font-family:monospace; font-size:11.5px; \
                                 line-height:1.4; white-space:pre-wrap; \
-                                max-height:160px; overflow:auto;">
-                        { (*driver_log).clone() }
+                                max-height:200px; overflow:auto;">
+                        { (*trace).clone() }
                     </pre>
                 </details>
             }

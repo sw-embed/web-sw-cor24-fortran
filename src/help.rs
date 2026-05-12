@@ -1,5 +1,4 @@
-//! Modal dialog with Usage / Reference tabs documenting the
-//! pipeline and current capability state. Triggered by the `[?]`
+//! Modal dialog with Usage / Reference tabs. Triggered by the `[?]`
 //! button in the header.
 
 use yew::prelude::*;
@@ -58,7 +57,7 @@ pub fn help_modal(props: &HelpModalProps) -> Html {
                    z-index:1000;">
             <div onclick={stop_click}
                 style="background:#1e1e2e; color:#cdd6f4; border:1px solid #313244; \
-                       border-radius:8px; max-width:760px; width:90vw; \
+                       border-radius:8px; max-width:780px; width:90vw; \
                        max-height:85vh; display:flex; flex-direction:column;">
                 <div style="display:flex; align-items:center; justify-content:space-between; \
                             padding:12px 16px; border-bottom:1px solid #313244;">
@@ -99,10 +98,19 @@ fn usage_content() -> Html {
                 {"Three stages, all running in your browser:"}
             </p>
             <ol style="margin:0 0 16px 24px; padding:0;">
-                <li><b>{"Compile"}</b>{" \u{2014} loads "}<code>{"snobol4.lgo"}</code>
-                    {" (the SNOBOL4 interpreter, from sw-cor24-snobol4) into a nested COR24 emulator, feeds it "}
-                    <code>{"fortran.sno"}</code>{" (the FTI-0 compiler from sw-cor24-fortran) followed by your "}
-                    <code>{".f"}</code>{" source via UART, and captures the emitted COR24 assembly."}</li>
+                <li><b>{"Compile"}</b>{" \u{2014} runs dcftn's three-phase SNOBOL4 compiler chain. "}
+                    {"For each phase a nested "}<code>{"cor24-emulator"}</code>{" loads "}
+                    <code>{"snobol4.lgo"}</code>{" (dcsno's interpreter), drops the phase's "}
+                    <code>{".sno"}</code>{" source at "}<code>{"0x080000"}</code>
+                    {" and the phase's input at "}<code>{"0x090000"}</code>{", and captures the UART output:"}</li>
+            </ol>
+            <pre style="margin:0 0 12px 16px; padding:8px; background:#11111b; \
+                        border:1px solid #313244; border-radius:4px; \
+                        color:#cdd6f4; font-family:monospace; font-size:11.5px; \
+                        line-height:1.45; white-space:pre; overflow:auto;">
+{ "  your .f\n    \u{2192} normalize.sno  \u{2192} normalized statement records\n    \u{2192} classify.sno   \u{2192} records tagged with kind=PROGRAM/PRINT/STOP/...\n    \u{2192} emit_asm.sno   \u{2192} COR24 assembly (.s)" }
+            </pre>
+            <ol start="2" style="margin:0 0 16px 24px; padding:0;">
                 <li><b>{"Assemble"}</b>{" \u{2014} runs "}<code>{"cor24-assembler"}</code>
                     {" over the "}<code>{".s"}</code>{" to produce machine code + listing."}</li>
                 <li><b>{"Run"}</b>{" \u{2014} loads the bytes into a fresh "}<code>{"cor24-emulator"}</code>
@@ -111,28 +119,28 @@ fn usage_content() -> Html {
 
             <h3 style="color:#cba6f7; margin:16px 0 8px 0;">{"Try it"}</h3>
             <ul style="margin:0 0 16px 24px; padding:0;">
-                <li>{"Pick a demo from the dropdown to load the source."}</li>
-                <li>{"Edit the source if you like."}</li>
-                <li>{"Click "}<b>{"Compile"}</b>{" to see what fortran.sno emits, "}<b>{"Assemble"}</b>
-                    {" to see the listing, "}<b>{"Run"}</b>{" to execute."}</li>
-                <li>{"Refresh the browser to start over."}</li>
+                <li>{"Pick a demo from the dropdown to load source."}</li>
+                <li>{"Edit if you like \u{2014} "}<code>{"PRINT *, 'whatever'"}</code>{" of any string compiles."}</li>
+                <li>{"Click "}<b>{"Compile"}</b>{", "}<b>{"Assemble"}</b>{", "}<b>{"Run"}</b>{" in order, or just "}
+                    <b>{"Run"}</b>{" to do all three."}</li>
+                <li>{"Open the "}<i>{"Compiler trace"}</i>{" pane below the buttons to see what each phase emitted."}</li>
+                <li>{"Refresh the browser to reset state."}</li>
             </ul>
 
             <h3 style="color:#cba6f7; margin:16px 0 8px 0;">{"What works today"}</h3>
             <p style="margin:0 0 12px 0;">
-                {"dcftn's "}<code>{"fortran.sno"}</code>{" is in research phase \u{2014} the current driver "}
-                {"prints "}<code>{"\"FTI-0 compiler not yet implemented\""}</code>{" for any input. "}
-                {"Only the canonical "}<code>{"hello.f"}</code>{" runs end-to-end today, via a "}
-                {"Path-A short-circuit that swaps in dcftn's hand-written "}<code>{"hello.s"}</code>
-                {" (mirroring what "}<code>{"scripts/fortran"}</code>{" does upstream)."}
+                {"dcftn shipped the m3-emit-hello milestone: "}<code>{"emit_asm.sno"}</code>{" handles "}
+                <code>{"PROGRAM"}</code>{", "}<code>{"STOP"}</code>{", "}<code>{"END"}</code>{", and "}
+                <code>{"PRINT *, 'string'"}</code>{". They're now working on m4 (integer PRINT). "}
+                {"As later milestones land, refresh "}<code>{"assets/emit_asm.sno"}</code>
+                {" from upstream and rebuild \u{2014} no code changes here."}
             </p>
-            <p style="margin:0 0 12px 0;">
-                {"For the other demos (array1.f, goto1.f, sum10.f), the SNOBOL4 driver runs and "}
-                {"prints its stub message; you can see it in the collapsible "}
-                <i>{"\"SNOBOL4 driver output\""}</i>{" panel below the buttons. As dcftn ships "}
-                <code>{"fortran.sno"}</code>{" phases (normalize, classify, expr, lower, emit), the demo will "}
-                {"compile more of these inputs automatically \u{2014} just by refreshing "}
-                <code>{"assets/fortran.sno"}</code>{" from upstream."}
+            <p style="margin:0;">
+                {"Today: "}<code>{"hello.f"}</code>{" compiles end-to-end. The other bundled demos "}
+                {"run through normalize/classify successfully but emit_asm doesn't yet know how to "}
+                {"emit code for "}<code>{"INTEGER"}</code>{", "}<code>{"DIMENSION"}</code>{", "}
+                <code>{"DO"}</code>{", "}<code>{"GOTO"}</code>{", "}<code>{"IF"}</code>{", or integer "}
+                <code>{"PRINT"}</code>{"."}
             </p>
         </>
     }
@@ -144,17 +152,34 @@ fn reference_content() -> Html {
             <h3 style="color:#cba6f7; margin:0 0 8px 0;">{"Architecture"}</h3>
             <p style="margin:0 0 12px 0;">
                 {"This page is intentionally a "}<i>{"thin shell"}</i>{" over the upstream toolchain. \
-                There is "}<b>{"no"}</b>{" Rust-side Fortran parser. The compiler is the SNOBOL4 program "}
-                <code>{"fortran.sno"}</code>{", running on the SNOBOL4 interpreter "}
-                <code>{"snobol4.lgo"}</code>{", running on a nested "}<code>{"cor24-emulator"}</code>{"."}
+                There is "}<b>{"no"}</b>{" Rust-side Fortran parser. The compiler is dcftn's three "}
+                {"SNOBOL4 programs, run on dcsno's SNOBOL4 interpreter, run on nested "}
+                <code>{"cor24-emulator"}</code>{" instances. The wiring exactly mirrors what "}
+                <code>{"scripts/fortran"}</code>{" does in "}
+                <code>{"sw-cor24-fortran"}</code>{"."}
             </p>
 
-            <pre style="margin:0 0 16px 0; padding:10px; background:#11111b; \
-                        border:1px solid #313244; border-radius:4px; \
-                        color:#cdd6f4; font-family:monospace; font-size:11.5px; \
-                        line-height:1.45; white-space:pre; overflow:auto;">
-{ "user .f source\n   |\n   v   cor24-emulator (this page) loads snobol4.lgo, sends fortran.sno + .f via UART\n   |\n   v   fortran.sno emits COR24 .s (today: stub message)\n   |\n   v   cor24-assembler (this page) -> bytes + listing\n   |\n   v   cor24-emulator (this page) runs bytes -> UART output" }
-            </pre>
+            <h3 style="color:#cba6f7; margin:16px 0 8px 0;">{"Compiler phases"}</h3>
+            <table style="border-collapse:collapse; width:100%; margin-bottom:16px; font-size:0.88rem;">
+                <thead>
+                    <tr style="background:#313244;">
+                        <th style="text-align:left; padding:6px 10px; border:1px solid #45475a;">{"Phase"}</th>
+                        <th style="text-align:left; padding:6px 10px; border:1px solid #45475a;">{"Input"}</th>
+                        <th style="text-align:left; padding:6px 10px; border:1px solid #45475a;">{"Output"}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"normalize.sno"}</code></td>
+                        <td style="padding:6px 10px; border:1px solid #45475a;">{"fixed-form .f source"}</td>
+                        <td style="padding:6px 10px; border:1px solid #45475a;">{"normalized statement records (one per line: stmt<N> line=<M> label=<L> text=<text>)"}</td></tr>
+                    <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"classify.sno"}</code></td>
+                        <td style="padding:6px 10px; border:1px solid #45475a;">{"normalize output"}</td>
+                        <td style="padding:6px 10px; border:1px solid #45475a;">{"same records with kind=<PROGRAM|PRINT|STOP|END|...> added"}</td></tr>
+                    <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"emit_asm.sno"}</code></td>
+                        <td style="padding:6px 10px; border:1px solid #45475a;">{"classify output"}</td>
+                        <td style="padding:6px 10px; border:1px solid #45475a;">{"COR24 .s assembly"}</td></tr>
+                </tbody>
+            </table>
 
             <h3 style="color:#cba6f7; margin:16px 0 8px 0;">{"Bundled assets"}</h3>
             <table style="border-collapse:collapse; width:100%; margin-bottom:16px; font-size:0.88rem;">
@@ -162,40 +187,29 @@ fn reference_content() -> Html {
                     <tr style="background:#313244;">
                         <th style="text-align:left; padding:6px 10px; border:1px solid #45475a;">{"File"}</th>
                         <th style="text-align:left; padding:6px 10px; border:1px solid #45475a;">{"Source"}</th>
-                        <th style="text-align:left; padding:6px 10px; border:1px solid #45475a;">{"Purpose"}</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"assets/snobol4.lgo"}</code></td>
-                        <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-snobol4"}</code></td>
-                        <td style="padding:6px 10px; border:1px solid #45475a;">{"SNOBOL4 interpreter (compiled to COR24)"}</td></tr>
-                    <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"assets/fortran.sno"}</code></td>
-                        <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran"}</code></td>
-                        <td style="padding:6px 10px; border:1px solid #45475a;">{"FTI-0 compiler in SNOBOL4 (today: research-phase stub)"}</td></tr>
-                    <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"assets/hello.s"}</code></td>
-                        <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran"}</code></td>
-                        <td style="padding:6px 10px; border:1px solid #45475a;">{"Path-A fixture: dcftn's hand-written hello.s"}</td></tr>
+                        <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"work/lib/cor24/snobol4.lgo"}</code>{" (sw-cor24-snobol4)"}</td></tr>
+                    <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"assets/normalize.sno"}</code></td>
+                        <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/snobol4/src/normalize.sno"}</code></td></tr>
+                    <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"assets/classify.sno"}</code></td>
+                        <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/snobol4/src/classify.sno"}</code></td></tr>
+                    <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"assets/emit_asm.sno"}</code></td>
+                        <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/snobol4/src/emit_asm.sno"}</code></td></tr>
                     <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"examples/*.f"}</code></td>
-                        <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran"}</code></td>
-                        <td style="padding:6px 10px; border:1px solid #45475a;">{"FTI-0 demo programs (hello, array1, goto1, sum10)"}</td></tr>
+                        <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/examples"}</code></td></tr>
                 </tbody>
             </table>
 
-            <h3 style="color:#cba6f7; margin:16px 0 8px 0;">{"Path A short-circuit"}</h3>
-            <p style="margin:0 0 12px 0;">
-                {"When the source matches dcftn's canonical "}<code>{"hello.f"}</code>{" exactly, the demo "}
-                {"swaps in their pre-baked "}<code>{"hello.s"}</code>{" instead of using the SNOBOL4 driver's "}
-                {"output. This mirrors the upstream "}<code>{"scripts/fortran"}</code>
-                {" which short-circuits hello.f because the full FTI-0 compiler isn't ready yet. The .s pane "}
-                {"shows a "}<i>{"\"\u{00b7} Path-A short-circuit\""}</i>{" badge when this happens."}
-            </p>
-
-            <h3 style="color:#cba6f7; margin:16px 0 8px 0;">{"Refreshing fortran.sno"}</h3>
+            <h3 style="color:#cba6f7; margin:16px 0 8px 0;">{"Refreshing the upstream"}</h3>
             <p style="margin:0;">
-                {"As dcftn ships compiler phases, refresh "}<code>{"assets/fortran.sno"}</code>
-                {" from "}<code>{"sw-cor24-fortran/snobol4/src/driver.sno"}</code>{" (or whatever bundled "}
-                {"form they ship), rebuild "}<code>{"./scripts/build-pages.sh"}</code>{", and re-deploy. "}
-                {"No code changes here are required."}
+                {"As dcftn ships compiler milestones, refresh "}<code>{"assets/{normalize,classify,emit_asm}.sno"}</code>
+                {" from "}<code>{"sw-cor24-fortran/snobol4/src/"}</code>{", refresh "}
+                <code>{"assets/snobol4.lgo"}</code>{" from "}
+                <code>{"work/lib/cor24/snobol4.lgo"}</code>{" when dcsno reships, then rebuild "}
+                <code>{"./scripts/build-pages.sh"}</code>{" and re-deploy. No source changes required."}
             </p>
         </>
     }
