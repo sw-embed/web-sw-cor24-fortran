@@ -76,6 +76,40 @@ pub fn compile(f_source: &str) -> CompileResult {
         emitted.instructions,    emitted.stop_reason,    emitted.output.trim(),
     );
 
+    // emit_asm.sno emits `* WARN: malformed input: ...` lines for any
+    // record whose KIND it doesn't yet emit code for. Those lines aren't
+    // valid COR24-asm comments ('*' isn't a comment prefix; ';' is) so
+    // they break the downstream assembler. Treat them as compile-stage
+    // failures with a friendly message naming the unsupported statements.
+    let warns: Vec<&str> = emitted
+        .output
+        .lines()
+        .filter(|l| l.starts_with("* WARN:"))
+        .collect();
+
+    if !warns.is_empty() {
+        let detail = warns
+            .iter()
+            .map(|w| format!("  {}", w.trim_start_matches("* WARN: malformed input: ").trim()))
+            .collect::<Vec<_>>()
+            .join("\n");
+        return CompileResult {
+            asm: String::new(),
+            error: Some(CompileError {
+                message: format!(
+                    "emit_asm.sno can't yet emit code for {} statement(s):\n\n{detail}\n\n\
+                     dcftn shipped m3-emit-hello, which covers PROGRAM, STOP, END, and \
+                     PRINT *, 'string'. Other statement kinds (INTEGER, DIMENSION, DO, \
+                     GOTO, IF, integer PRINT, ASSIGN, CONTINUE) wait on subsequent \
+                     milestones \u{2014} m4-print-int is in flight. See the 'Compiler \
+                     trace' pane below for each phase's intermediate output.",
+                    warns.len()
+                ),
+            }),
+            trace,
+        };
+    }
+
     if looks_like_asm(&emitted.output) {
         CompileResult {
             asm: emitted.output,
@@ -86,14 +120,10 @@ pub fn compile(f_source: &str) -> CompileResult {
         CompileResult {
             asm: String::new(),
             error: Some(CompileError {
-                message: format!(
-                    "The FTI-0 compiler chain (normalize \u{2192} classify \u{2192} emit_asm) \
-                     did not produce COR24 assembly. The emit_asm phase supports only the \
-                     subset of FTI-0 that dcftn has shipped so far (PROGRAM/STOP/END plus \
-                     PRINT *, 'string'). Inputs using INTEGER declarations, DO loops, \
-                     GOTO, IF, DIMENSION, or integer PRINT will not yet compile.\n\n\
-                     See the 'Compiler trace' pane below for what each phase emitted."
-                ),
+                message: "The FTI-0 compiler chain (normalize \u{2192} classify \u{2192} \
+                          emit_asm) did not produce COR24 assembly. See the 'Compiler \
+                          trace' pane below for each phase's intermediate output."
+                    .into(),
             }),
             trace,
         }
