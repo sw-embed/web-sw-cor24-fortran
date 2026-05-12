@@ -129,11 +129,15 @@ fn usage_content() -> Html {
 
             <h3 style="color:#cba6f7; margin:16px 0 8px 0;">{"What works today"}</h3>
             <p style="margin:0 0 12px 0;">
-                {"dcftn shipped the m3-emit-hello milestone: "}<code>{"emit_asm.sno"}</code>{" handles "}
-                <code>{"PROGRAM"}</code>{", "}<code>{"STOP"}</code>{", "}<code>{"END"}</code>{", and "}
-                <code>{"PRINT *, 'string'"}</code>{". They're now working on m4 (integer PRINT). "}
-                {"As later milestones land, refresh "}<code>{"assets/emit_asm.sno"}</code>
-                {" from upstream and rebuild \u{2014} no code changes here."}
+                {"dcftn has shipped m3-emit-hello, m4-print-int, and m5-print-var. "}
+                <code>{"emit_asm.sno"}</code>{" now handles "}<code>{"PROGRAM"}</code>{" / "}
+                <code>{"STOP"}</code>{" / "}<code>{"END"}</code>{" boilerplate, "}
+                <code>{"PRINT *, 'string'"}</code>{", "}<code>{"PRINT *, <integer literal>"}</code>{", "}
+                <code>{"INTEGER <name>"}</code>{" declarations, "}<code>{"<name> = <literal>"}</code>{" assignments, and "}
+                <code>{"PRINT *, <name>"}</code>{" (integer variable). As later milestones land "}
+                {"(DO loops, GOTO/IF, integer expressions, DIMENSION/arrays), refresh "}
+                <code>{"assets/{normalize,classify,emit_asm}.sno"}</code>{" + "}
+                <code>{"assets/putint.s"}</code>{" from upstream and rebuild \u{2014} no code changes here."}
             </p>
             <p style="margin:0;">
                 {"Today: "}<code>{"hello.f"}</code>{" compiles end-to-end. The other bundled demos "}
@@ -198,6 +202,8 @@ fn reference_content() -> Html {
                         <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/snobol4/src/classify.sno"}</code></td></tr>
                     <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"assets/emit_asm.sno"}</code></td>
                         <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/snobol4/src/emit_asm.sno"}</code></td></tr>
+                    <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"assets/putint.s"}</code></td>
+                        <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/snobol4/runtime/putint.s"}</code>{" (spliced into emit_asm output at the "}<code>{"; __RUNTIME_PUTINT__"}</code>{" marker)"}</td></tr>
                     <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"examples/*.f"}</code></td>
                         <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/examples"}</code></td></tr>
                 </tbody>
