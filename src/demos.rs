@@ -19,15 +19,29 @@ pub struct Demo {
     pub source: &'static str,
 }
 
-pub const DEMOS: &[Demo] = &[
-    Demo { id: "hello.f",  label: "Hello, World! \u{2014} works today",            source: HELLO_F },
-    Demo { id: "array1.f", label: "Array init (needs DIMENSION + integer PRINT)",  source: ARRAY1_F },
-    Demo { id: "goto1.f",  label: "GOTO loop (needs INTEGER + GOTO + IF)",         source: GOTO1_F },
-    Demo { id: "sum10.f",  label: "Sum 1..10 (needs INTEGER + DO + integer PRINT)", source: SUM10_F },
+/// Demos that compile + assemble + run end-to-end against the current
+/// emit_asm.sno (m3-emit-hello: PROGRAM, STOP, END, PRINT *, 'string').
+pub const WORKING: &[Demo] = &[
+    Demo { id: "hello.f", label: "Hello, World!", source: HELLO_F },
+];
+
+/// Demos that run through the chain but emit_asm.sno doesn't yet know
+/// how to emit code for their statement kinds. Picked from upstream
+/// `sw-cor24-fortran/examples/` so they unlock as dcftn ships further
+/// milestones (m4 = integer PRINT, then DO / GOTO / IF / INTEGER /
+/// DIMENSION).
+pub const PENDING: &[Demo] = &[
+    Demo { id: "array1.f", label: "Array init  \u{2014} needs DIMENSION + integer PRINT",  source: ARRAY1_F },
+    Demo { id: "goto1.f",  label: "GOTO loop   \u{2014} needs INTEGER + GOTO + IF",         source: GOTO1_F },
+    Demo { id: "sum10.f",  label: "Sum 1..10   \u{2014} needs INTEGER + DO + integer PRINT", source: SUM10_F },
 ];
 
 pub fn lookup(id: &str) -> Option<&'static str> {
-    DEMOS.iter().find(|d| d.id == id).map(|d| d.source)
+    WORKING
+        .iter()
+        .chain(PENDING.iter())
+        .find(|d| d.id == id)
+        .map(|d| d.source)
 }
 
 pub const DEFAULT_SOURCE: &str = HELLO_F;
