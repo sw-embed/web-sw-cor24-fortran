@@ -98,15 +98,25 @@
         OUTPUT = '        jmp     (r1)'
         OUTPUT = ''
 
-*       String-literal pool state.
+*       Marker for scripts/fortran to splice runtime _putint here.
+*       Cannot inline _putint emit (~70 OUTPUTs) because dcsno
+*       miscompiles SNOBOL4 programs above ~233 statements. See
+*       tools/briefs/dcsno-static-program-size-limit.md.
+        OUTPUT = '; __RUNTIME_PUTINT__'
+        OUTPUT = ''
+
+*       String-literal pool + INTEGER variable pool state.
         LITNUM = 0
         LITDATA = ''
+        VARDATA = ''
         NL = CHAR(10)
 
 *       === Main loop: dispatch on classified records ===
 LOOP    LINE = RAWINPUT                         :F(EOF)
         LINE 'kind=' BREAK(' ') . KIND ' text=' REM . TXT  :F(BAD)
         IDENT(KIND, 'PROGRAM')                  :S(KPRG)
+        IDENT(KIND, 'INTEGER_DECL')             :S(KINT)
+        IDENT(KIND, 'ASSIGN')                   :S(KASN)
         IDENT(KIND, 'PRINT')                    :S(KPRT)
         IDENT(KIND, 'STOP')                     :S(KSTP)
         IDENT(KIND, 'END')                      :S(KEND)
@@ -122,11 +132,71 @@ KPRG    OUTPUT = '        .globl  _main'
         OUTPUT = '        mov     fp,sp'
         :(LOOP)
 
-*       PRINT: parse string literal from TXT, emit call to _puts,
-*       accumulate the literal (with appended \n\0) into LITDATA.
+*       INTEGER X: track X in the variable pool. Emit a
+*       `_V_X: .word 0` entry into VARDATA, flushed at END.
+*       SPAN of the alphabetic class stops at end-of-subject or
+*       any non-alpha char, so this handles both `INTEGER X` and
+*       `INTEGER X,Y` (latter captures X; Y handled by a
+*       follow-up saga that splits multi-decl forms).
+KINT    TXT 'INTEGER' SPAN(' ') SPAN('ABCDEFGHIJKLMNOPQRSTUVWXYZ') . VN  :F(BAD)
+        VARDATA = VARDATA '_V_' VN ':' NL
+        VARDATA = VARDATA '        .word   0' NL
+        :(LOOP)
+
+*       ASSIGN: `<NAME> = <int-literal>`. Only literal RHS in
+*       this saga; expression RHS comes in a later milestone.
+KASN    TXT BREAK(' =') . VN SPAN(' =') SPAN('0123456789') . NUM  :F(BAD)
+        OUTPUT = '        la      r0,' NUM
+        OUTPUT = '        la      r1,_V_' VN
+        OUTPUT = '        sw      r0,0(r1)'
+        :(LOOP)
+
+*       PRINT: detect string literal vs integer literal vs
+*       variable reference in arg list.
+*       String form:   PRINT *, 'lit'  -> _puts via pool entry.
+*       Integer form:  PRINT *, <int>  -> la r0,N; _putint; \n.
+*       Variable form: PRINT *, X      -> lw _V_X; _putint; \n.
 *       Uses double-quoted "'" -- this dialect parses '''' as empty
 *       string (not a 1-char apostrophe per standard SNOBOL4).
-KPRT    TXT BREAK("'") "'" BREAK("'") . LIT     :F(BAD)
+KPRT    TXT BREAK("'") "'" BREAK("'") . LIT     :S(KPRTS)
+*       No apostrophe -- try integer literal.
+        TXT 'PRINT *' SPAN(' ,') SPAN('0123456789') . NUM  :S(KPRTI)
+*       No digit run after `PRINT *,` -- try bare variable name.
+        TXT 'PRINT *' SPAN(' ,') BREAK(' ') . VN  :S(KPRTV)
+        TXT 'PRINT *' SPAN(' ,') REM . VN         :S(KPRTV)
+*       Neither form recognised.
+        :(BAD)
+
+*       --- PRINT integer literal ---
+KPRTI   OUTPUT = '        la      r0,' NUM
+        OUTPUT = '        push    r0'
+        OUTPUT = '        la      r0,_putint'
+        OUTPUT = '        jal     r1,(r0)'
+        OUTPUT = '        add     sp,3'
+*       Emit a trailing newline (FORTRAN list-directed PRINT).
+        OUTPUT = '        lc      r0,10'
+        OUTPUT = '        push    r0'
+        OUTPUT = '        la      r0,_putc'
+        OUTPUT = '        jal     r1,(r0)'
+        OUTPUT = '        add     sp,3'
+        :(LOOP)
+
+*       --- PRINT variable reference ---
+KPRTV   OUTPUT = '        la      r0,_V_' VN
+        OUTPUT = '        lw      r0,0(r0)'
+        OUTPUT = '        push    r0'
+        OUTPUT = '        la      r0,_putint'
+        OUTPUT = '        jal     r1,(r0)'
+        OUTPUT = '        add     sp,3'
+        OUTPUT = '        lc      r0,10'
+        OUTPUT = '        push    r0'
+        OUTPUT = '        la      r0,_putc'
+        OUTPUT = '        jal     r1,(r0)'
+        OUTPUT = '        add     sp,3'
+        :(LOOP)
+
+*       --- PRINT string literal ---
+KPRTS
 *       Convert LIT to comma-separated decimal byte values in BYTES.
         BYTES = ''
         T = LIT
@@ -160,8 +230,9 @@ KSTP    OUTPUT = '        lc      r0,0'
         OUTPUT = '        bra     LEND'
         :(LOOP)
 
-*       END: emit epilogue label + epilogue + trailing .data section
-*       with the accumulated string-literal pool.
+*       END: emit epilogue label + epilogue + trailing .data
+*       section with accumulated string-literal pool and INTEGER
+*       variable pool.
 KEND    OUTPUT = 'LEND:'
         OUTPUT = '        mov     sp,fp'
         OUTPUT = '        pop     r1'
@@ -170,11 +241,13 @@ KEND    OUTPUT = 'LEND:'
         OUTPUT = '        jmp     (r1)'
         OUTPUT = ''
         OUTPUT = '        .data'
-        EQ(SIZE(LITDATA), 0)                    :S(LOOP)
+        EQ(SIZE(LITDATA), 0)                    :S(KENDV)
         OUTPUT = LITDATA
+KENDV   EQ(SIZE(VARDATA), 0)                    :S(LOOP)
+        OUTPUT = VARDATA
         :(LOOP)
 
-BAD     OUTPUT = '* WARN: malformed input: ' LINE  :(LOOP)
+BAD     OUTPUT = '; WARN: malformed input: ' LINE  :(LOOP)
 
 EOF
 END
