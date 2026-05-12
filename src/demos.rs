@@ -9,6 +9,8 @@
 //! relevant demos with no UI changes.
 
 pub const HELLO_F: &str = include_str!("../examples/hello.f");
+pub const PRINT_INT_F: &str = include_str!("../examples/print-int.f");
+pub const PRINT_VAR_F: &str = include_str!("../examples/print-var.f");
 pub const ARRAY1_F: &str = include_str!("../examples/array1.f");
 pub const GOTO1_F: &str = include_str!("../examples/goto1.f");
 pub const SUM10_F: &str = include_str!("../examples/sum10.f");
@@ -22,7 +24,9 @@ pub struct Demo {
 /// Demos that compile + assemble + run end-to-end against the current
 /// emit_asm.sno (m3-emit-hello: PROGRAM, STOP, END, PRINT *, 'string').
 pub const WORKING: &[Demo] = &[
-    Demo { id: "hello.f", label: "Hello, World!", source: HELLO_F },
+    Demo { id: "hello.f",     label: "Hello, World!  (m3-emit-hello)", source: HELLO_F },
+    Demo { id: "print-int.f", label: "Print int literal  (m4-print-int)", source: PRINT_INT_F },
+    Demo { id: "print-var.f", label: "Print int variable  (m5-print-var)", source: PRINT_VAR_F },
 ];
 
 /// Demos that run through the chain but emit_asm.sno doesn't yet know
