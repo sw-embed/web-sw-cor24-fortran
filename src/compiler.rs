@@ -84,21 +84,33 @@ pub fn compile(f_source: &str) -> CompileResult {
         emitted.instructions,    emitted.stop_reason,    emitted.output.trim(),
     );
 
-    // emit_asm.sno emits `* WARN: malformed input: ...` lines for any
-    // record whose KIND it doesn't yet emit code for. Those lines aren't
-    // valid COR24-asm comments ('*' isn't a comment prefix; ';' is) so
-    // they break the downstream assembler. Treat them as compile-stage
-    // failures with a friendly message naming the unsupported statements.
+    // emit_asm.sno emits `; WARN: malformed input: ...` lines (older
+    // builds used `*` which broke stage 2; dcftn switched to `;` so
+    // they're valid COR24 comments now). Detect both prefixes and
+    // treat any warn as a compile-stage failure with a friendly
+    // message -- otherwise stage 2 succeeds against a partial program
+    // that silently drops the unsupported statements (e.g., sum10.f
+    // would print 0 instead of 55 because S = S + I is dropped).
     let warns: Vec<&str> = emitted
         .output
         .lines()
-        .filter(|l| l.starts_with("* WARN:"))
+        .filter(|l| {
+            let t = l.trim_start();
+            t.starts_with("; WARN:") || t.starts_with("* WARN:")
+        })
         .collect();
 
     if !warns.is_empty() {
         let detail = warns
             .iter()
-            .map(|w| format!("  {}", w.trim_start_matches("* WARN: malformed input: ").trim()))
+            .map(|w| {
+                let trimmed = w.trim_start();
+                let body = trimmed
+                    .trim_start_matches("; WARN: malformed input: ")
+                    .trim_start_matches("* WARN: malformed input: ")
+                    .trim();
+                format!("  {body}")
+            })
             .collect::<Vec<_>>()
             .join("\n");
         return CompileResult {
