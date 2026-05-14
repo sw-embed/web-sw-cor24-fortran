@@ -49,7 +49,7 @@ KPRG    OUTPUT = '        .globl  _main'
         :(LOOP)
 
 *       INTEGER <name> -> add `_V_<name>: .word 0` to VARDATA.
-KINT    TXT 'INTEGER' SPAN(' ') SPAN('ABCDEFGHIJKLMNOPQRSTUVWXYZ') . VN  :F(BAD)
+KINT    TXT 'INTEGER' SPAN(' ') SPAN('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') . VN  :F(BAD)
         VARDATA = VARDATA '_V_' VN ':' NL
         VARDATA = VARDATA '        .word   0' NL
         :(LOOP)
@@ -120,7 +120,10 @@ KCNT    IDENT(LBL, DOLBL)                                          :F(LOOP)
         OUTPUT = '        mov     r1,r0'
         OUTPUT = '        pop     r0'
         OUTPUT = '        cls     r0,r1'
-        OUTPUT = '        brt     ' DOTOP
+        OUTPUT = '        brf     ' DOTOP 'X'
+        OUTPUT = '        la      r0,' DOTOP
+        OUTPUT = '        jmp     (r0)'
+        OUTPUT = DOTOP 'X:'
         DOLBL = ''
         :(LOOP)
 
@@ -160,18 +163,17 @@ EXPRAC  OUTPUT = '        push    r0'
         OUTPUT = '        lw      r0,0(r0)'
         :(EXPRD)
 
-EXPRB   T1 SPAN('0123456789')                                       :S(EXPRB1L)
-        T1 SPAN('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') . M          :F(BAD)
-        EQ(SIZE(M), SIZE(T1))                                       :F(BAD)
-        OUTPUT = '        la      r0,_V_' T1
+*       Treat T as literal only if ENTIRELY digits.
+EXPRB   T1 SPAN('0123456789') . M                                   :F(EXPRB1V)
+        EQ(SIZE(M), SIZE(T1))                                       :S(EXPRB1L)
+EXPRB1V OUTPUT = '        la      r0,_V_' T1
         OUTPUT = '        lw      r0,0(r0)'
         :(EXPRB1D)
 EXPRB1L OUTPUT = '        la      r0,' T1
 EXPRB1D OUTPUT = '        push    r0'
-        T2 SPAN('0123456789')                                       :S(EXPRB2L)
-        T2 SPAN('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') . M          :F(BAD)
-        EQ(SIZE(M), SIZE(T2))                                       :F(BAD)
-        OUTPUT = '        la      r0,_V_' T2
+        T2 SPAN('0123456789') . M                                   :F(EXPRB2V)
+        EQ(SIZE(M), SIZE(T2))                                       :S(EXPRB2L)
+EXPRB2V OUTPUT = '        la      r0,_V_' T2
         OUTPUT = '        lw      r0,0(r0)'
         :(EXPRB2D)
 EXPRB2L OUTPUT = '        la      r0,' T2
