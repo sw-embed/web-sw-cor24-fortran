@@ -391,16 +391,16 @@ fn app() -> Html {
                            border:1px solid #585b70; border-radius:5px; \
                            font-size:0.85rem; cursor:pointer; margin-left:6px;">
                     <option value="" selected=true disabled=true>{"Load demo..."}</option>
-                    <optgroup label="Works today">
-                        { for demos::WORKING.iter().map(|d| html! {
-                            <option value={d.id}>{format!("{} \u{2014} {}", d.id, d.label)}</option>
-                        }) }
-                    </optgroup>
-                    <optgroup label="Awaiting upstream milestone">
-                        { for demos::PENDING.iter().map(|d| html! {
-                            <option value={d.id}>{format!("{} \u{2014} {}", d.id, d.label)}</option>
-                        }) }
-                    </optgroup>
+                    { for demos::WORKING.iter().map(|d| html! {
+                        <option value={d.id}>{format!("{} \u{2014} {}", d.id, d.label)}</option>
+                    }) }
+                    if !demos::PENDING.is_empty() {
+                        <optgroup label="Awaiting upstream milestone">
+                            { for demos::PENDING.iter().map(|d| html! {
+                                <option value={d.id}>{format!("{} \u{2014} {}", d.id, d.label)}</option>
+                            }) }
+                        </optgroup>
+                    }
                 </select>
                 <span style="color:#bac2de; font-size:0.82rem; margin-left:6px;">{ &*status_msg }</span>
                 <span style="color:#a6adc8; font-size:0.82rem; margin-left:auto;">

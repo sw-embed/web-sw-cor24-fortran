@@ -129,15 +129,21 @@ fn usage_content() -> Html {
 
             <h3 style="color:#cba6f7; margin:16px 0 8px 0;">{"What works today"}</h3>
             <p style="margin:0 0 12px 0;">
-                {"dcftn has shipped m3-emit-hello, m4-print-int, and m5-print-var. "}
-                <code>{"emit_asm.sno"}</code>{" now handles "}<code>{"PROGRAM"}</code>{" / "}
-                <code>{"STOP"}</code>{" / "}<code>{"END"}</code>{" boilerplate, "}
-                <code>{"PRINT *, 'string'"}</code>{", "}<code>{"PRINT *, <integer literal>"}</code>{", "}
-                <code>{"INTEGER <name>"}</code>{" declarations, "}<code>{"<name> = <literal>"}</code>{" assignments, and "}
-                <code>{"PRINT *, <name>"}</code>{" (integer variable). As later milestones land "}
-                {"(DO loops, GOTO/IF, integer expressions, DIMENSION/arrays), refresh "}
+                {"dcftn has shipped milestones m3 through m9. "}
+                <code>{"emit_asm.sno"}</code>{" now handles the full original demo set:"}
+                <code>{"PROGRAM"}</code>{" / "}<code>{"STOP"}</code>{" / "}<code>{"END"}</code>{" boilerplate (m3), "}
+                <code>{"PRINT *, 'string'"}</code>{" (m3), "}<code>{"PRINT *, <int literal>"}</code>{" (m4), "}
+                <code>{"INTEGER <name>"}</code>{" + "}<code>{"<name> = <literal>"}</code>{" + "}<code>{"PRINT *, <name>"}</code>{" (m5), "}
+                <code>{"<name> = <expr>"}</code>{" with "}<code>{"+ - *"}</code>{" (m6), labels + "}
+                <code>{"GOTO"}</code>{" + "}<code>{"IF (e) GOTO label"}</code>{" (m7), "}
+                <code>{"DO label var = a, b"}</code>{" / "}<code>{"CONTINUE"}</code>{" (m8), "}
+                <code>{"DIMENSION A(N)"}</code>{" + array indexing in LHS / RHS / PRINT (m9)."}
+            </p>
+            <p style="margin:0 0 12px 0;">
+                {"All seven bundled "}<code>{"examples/*.f"}</code>{" demos compile, assemble, and run end-to-end today. "}
+                {"As dcftn ships further milestones (subroutines, more types, formatted I/O, ...), refresh "}
                 <code>{"assets/{normalize,classify,emit_asm}.sno"}</code>{" + "}
-                <code>{"assets/putint.s"}</code>{" from upstream and rebuild \u{2014} no code changes here."}
+                <code>{"assets/{prelude,putint}.s"}</code>{" from upstream and rebuild \u{2014} no code changes here."}
             </p>
             <p style="margin:0;">
                 {"Today: "}<code>{"hello.f"}</code>{" compiles end-to-end. The other bundled demos "}
@@ -202,8 +208,10 @@ fn reference_content() -> Html {
                         <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/snobol4/src/classify.sno"}</code></td></tr>
                     <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"assets/emit_asm.sno"}</code></td>
                         <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/snobol4/src/emit_asm.sno"}</code></td></tr>
+                    <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"assets/prelude.s"}</code></td>
+                        <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/snobol4/runtime/prelude.s"}</code>{" (spliced at "}<code>{"; __RUNTIME_PRELUDE__"}</code>{"; _start / _halt / _putc / _puts)"}</td></tr>
                     <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"assets/putint.s"}</code></td>
-                        <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/snobol4/runtime/putint.s"}</code>{" (spliced into emit_asm output at the "}<code>{"; __RUNTIME_PUTINT__"}</code>{" marker)"}</td></tr>
+                        <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/snobol4/runtime/putint.s"}</code>{" (spliced at "}<code>{"; __RUNTIME_PUTINT__"}</code>{")"}</td></tr>
                     <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"examples/*.f"}</code></td>
                         <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/examples"}</code></td></tr>
                 </tbody>
