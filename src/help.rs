@@ -129,7 +129,7 @@ fn usage_content() -> Html {
 
             <h3 style="color:#cba6f7; margin:16px 0 8px 0;">{"What works today"}</h3>
             <p style="margin:0 0 12px 0;">
-                {"dcftn has shipped milestones m3 through m9. "}
+                {"dcftn has shipped milestones m3 through m11. "}
                 <code>{"emit_asm.sno"}</code>{" now handles the full original demo set:"}
                 <code>{"PROGRAM"}</code>{" / "}<code>{"STOP"}</code>{" / "}<code>{"END"}</code>{" boilerplate (m3), "}
                 <code>{"PRINT *, 'string'"}</code>{" (m3), "}<code>{"PRINT *, <int literal>"}</code>{" (m4), "}
@@ -137,10 +137,12 @@ fn usage_content() -> Html {
                 <code>{"<name> = <expr>"}</code>{" with "}<code>{"+ - *"}</code>{" (m6), labels + "}
                 <code>{"GOTO"}</code>{" + "}<code>{"IF (e) GOTO label"}</code>{" (m7), "}
                 <code>{"DO label var = a, b"}</code>{" / "}<code>{"CONTINUE"}</code>{" (m8), "}
-                <code>{"DIMENSION A(N)"}</code>{" + array indexing in LHS / RHS / PRINT (m9)."}
+                <code>{"DIMENSION A(N)"}</code>{" + array indexing in LHS / RHS / PRINT (m9), "}
+                {"identifier validation in KPRT/KASN/KINT patterns (m10), and three classic demos "}
+                {"\u{2014} factorial, fibonacci, fizzbuzz (m11)."}
             </p>
             <p style="margin:0 0 12px 0;">
-                {"All seven bundled "}<code>{"examples/*.f"}</code>{" demos compile, assemble, and run end-to-end today. "}
+                {"All ten bundled "}<code>{"examples/*.f"}</code>{" demos compile, assemble, and run end-to-end today. "}
                 {"As dcftn ships further milestones (subroutines, more types, formatted I/O, ...), refresh "}
                 <code>{"assets/{normalize,classify,emit_asm}.sno"}</code>{" + "}
                 <code>{"assets/{prelude,putint}.s"}</code>{" from upstream and rebuild \u{2014} no code changes here."}

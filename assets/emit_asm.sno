@@ -63,9 +63,15 @@ KDIM    TXT 'DIMENSION' SPAN(' ') BREAK('(') . VN                   :F(BAD)
         :(LOOP)
 
 *       ASSIGN: <var> = <expr>  OR  <var>(<idx>) = <expr>.
-*       Detect array LHS by '(' before '=' in TXT.
+*       Detect array LHS by '(' before '=' in TXT. After
+*       capturing identifier-shaped fields (VN, ARVN, ARIDX
+*       when non-digit), validate via inline SPAN+SIZE check
+*       so genuinely-malformed input produces a clean `; WARN:`
+*       rather than a bogus `_V_+` style label.
 KASN    TXT BREAK('(=') . VN '('                                    :S(KASNA)
         TXT BREAK(' =') . VN SPAN(' =') REM . RHS                   :F(BAD)
+        VN SPAN('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') . M          :F(BAD)
+        EQ(SIZE(M), SIZE(VN))                                       :F(BAD)
         MODE = 'A'                                                  :(EXPR)
 KASNA   TXT '(' BREAK(')') . ARIDX ')'                              :F(BAD)
         TXT ')' SPAN(' =') REM . RHS                                :F(BAD)
@@ -128,10 +134,12 @@ EXPR    RHS BREAK(' +-*/') . T1 SPAN(' ') SPAN('+-*') . OP SPAN(' ') REM . T2  :
         RHS SPAN('ABCDEFGHIJKLMNOPQRSTUVWXYZ') . SRC                :S(EXPRV)
         :(BAD)
 
-EXPRL   OUTPUT = '        la      r0,' NUM
+EXPRL   EQ(SIZE(NUM), SIZE(RHS))                                    :F(BAD)
+        OUTPUT = '        la      r0,' NUM
         :(EXPRD)
 
-EXPRV   OUTPUT = '        la      r0,_V_' SRC
+EXPRV   EQ(SIZE(SRC), SIZE(RHS))                                    :F(BAD)
+        OUTPUT = '        la      r0,_V_' SRC
         OUTPUT = '        lw      r0,0(r0)'
         :(EXPRD)
 
@@ -153,12 +161,16 @@ EXPRAC  OUTPUT = '        push    r0'
         :(EXPRD)
 
 EXPRB   T1 SPAN('0123456789')                                       :S(EXPRB1L)
+        T1 SPAN('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') . M          :F(BAD)
+        EQ(SIZE(M), SIZE(T1))                                       :F(BAD)
         OUTPUT = '        la      r0,_V_' T1
         OUTPUT = '        lw      r0,0(r0)'
         :(EXPRB1D)
 EXPRB1L OUTPUT = '        la      r0,' T1
 EXPRB1D OUTPUT = '        push    r0'
         T2 SPAN('0123456789')                                       :S(EXPRB2L)
+        T2 SPAN('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') . M          :F(BAD)
+        EQ(SIZE(M), SIZE(T2))                                       :F(BAD)
         OUTPUT = '        la      r0,_V_' T2
         OUTPUT = '        lw      r0,0(r0)'
         :(EXPRB2D)
