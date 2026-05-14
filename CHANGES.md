@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-05-13 &mdash; Wire m10 + m11: identifier validation, three classic demos
+
+Upstream picked up the pattern-anchoring brief and shipped three more example programs.
+
+- **m10-pattern-anchor** &mdash; identifier validation added to `KPRT` / `KASN` / `KINT` patterns in `emit_asm.sno`. Closes the brief I drafted at `tools/briefs/dcftn-emit-asm-pattern-anchoring.md`. With the prior milestones already covering DO / GOTO / arrays etc., this was mostly defensive cleanup, but it's an honest line-of-defence against malformed inputs.
+- **m11-demos** &mdash; three classic Fortran programs now bundled upstream: `factorial.f` (5! via DO), `fibonacci.f` (iterative fib(11) = 89), `fizzbuzz.f` (1..15 using counter resets, since COR24 has no native div/mod).
+
+### What changed here
+
+- `assets/` &mdash; refreshed `normalize.sno`, `classify.sno`, `emit_asm.sno`, `prelude.s`, `putint.s` from the canonical install at `work/lib/cor24/fortran/snobol4/`. Only `emit_asm.sno` actually changed (one-line `KINT` identifier-validation patch).
+- `examples/` &mdash; added `factorial.f`, `fibonacci.f`, `fizzbuzz.f`.
+- `src/demos.rs` &mdash; WORKING now lists ten demos.
+- `src/help.rs` &mdash; mentions m10 + m11.
+
+`snobol4.lgo` unchanged (dcsno hasn't reshipped since 2026-05-12; the source-byte cap is still in effect, which is what `tools/briefs/dcsno-lift-source-byte-cap.md` asks dcsno to fix).
+
 ## 2026-05-13 &mdash; Wire m6-m9: all four pending demos now compile
 
 Upstream burst: dcftn shipped four milestones since yesterday's m5 refresh:
