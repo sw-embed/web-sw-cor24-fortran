@@ -62,6 +62,53 @@ the short-circuit becomes irrelevant and goes away.
 After refreshing assets, run `./scripts/build-pages.sh` to rebake
 `pages/` and commit.
 
+## Asset refresh routine (READ THIS BEFORE SHIPPING)
+
+The canonical source for `.sno` / `.s` runtime files is
+`work/lib/cor24/fortran/snobol4/` &mdash; mike maintains it. Hit-once-and-done
+copies have bitten us: mike sometimes re-installs the same files
+between `dg-new-feature` and `git commit`, leaving stale assets in
+this repo. Always do this in order:
+
+1. `cp` from `work/lib/cor24/fortran/snobol4/{src,runtime}/*` into
+   `assets/`.
+2. **`diff` `assets/*` against the install dir.** If non-empty, mike
+   has done a follow-up install &mdash; re-copy and re-verify.
+3. End-to-end test each demo through the upstream wrapper. Easy
+   one-liner under `/tmp`:
+
+   ```bash
+   cd /tmp && cp <repo>/assets/{normalize,classify,emit_asm}.sno .
+   for f in <repo>/examples/*.f; do
+       snobol4 --load-binary normalize.sno@0x080000 --load-binary "$f@0x090000" \
+               --entry 0 --quiet --speed 0 -n 100000000 2>/dev/null > /tmp/n.txt
+       snobol4 --load-binary classify.sno@0x080000 --load-binary /tmp/n.txt@0x090000 \
+               --entry 0 --quiet --speed 0 -n 100000000 2>/dev/null > /tmp/c.txt
+       snobol4 --load-binary emit_asm.sno@0x080000 --load-binary /tmp/c.txt@0x090000 \
+               --entry 0 --quiet --speed 0 -n 100000000 2>/dev/null > /tmp/asm.txt
+       awk -v p=<repo>/assets/prelude.s -v u=<repo>/assets/putint.s \
+           '/__RUNTIME_PRELUDE__/ {while ((getline l < p) > 0) print l; close(p); next}
+            /__RUNTIME_PUTINT__/  {while ((getline l < u) > 0) print l; close(u);  next}
+            {print}' /tmp/asm.txt > /tmp/full.s
+       D=$(mktemp -d) && cp /tmp/full.s "$D/" && (cd "$D" && cor24-asm full.s -o full.lgo \
+           && cor24-emu --lgo full.lgo --quiet --speed 0 -n 10000000) && rm -rf "$D"
+   done
+   ```
+
+4. Only after all demos produce expected output: `./scripts/build-pages.sh`,
+   commit, `dg-mark-pr`.
+
+`snobol4.lgo` is canonical at `work/lib/cor24/snobol4.lgo` (one level
+up from the fortran dir). Same diff-then-copy discipline applies.
+
+### Why this matters
+
+dcftn ships emit_asm.sno changes in waves &mdash; sometimes the milestone PR
+merges, then a minor follow-up fix lands minutes later and mike
+re-installs without a new merge commit. The git log of `sw-cor24-fortran`
+won't reflect it; only the timestamps under `work/lib/cor24/fortran/`
+do. Skipping the diff step **silently** ships a stale compiler.
+
 ## Path-deps
 
 `Cargo.toml` references two sibling crates:
