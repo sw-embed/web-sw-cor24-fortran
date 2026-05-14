@@ -41,16 +41,21 @@ pub const NORMALIZE_SNO: &str = include_str!("../assets/normalize.sno");
 pub const CLASSIFY_SNO: &str = include_str!("../assets/classify.sno");
 pub const EMIT_ASM_SNO: &str = include_str!("../assets/emit_asm.sno");
 
-/// _putint runtime spliced into the emit_asm output at the
-/// `; __RUNTIME_PUTINT__` marker. emit_asm.sno can't emit this inline
-/// because doing so would push the SNOBOL4 program past dcsno's
-/// ~233-statement static-program-size limit. Mirrors the awk splice
-/// in upstream `scripts/fortran`.
+/// Runtime helpers spliced into the emit_asm output at marker lines.
+/// emit_asm.sno can't emit these inline because their combined
+/// ~120 OUTPUTs would push the SNOBOL4 program past dcsno's
+/// ~230-statement static-program-size limit. Mirrors the awk splice
+/// at the end of upstream `scripts/fortran`.
+///
+/// - prelude.s: _start, _halt, _putc, _puts  (at `; __RUNTIME_PRELUDE__`)
+/// - putint.s:  _putint                       (at `; __RUNTIME_PUTINT__`)
+pub const PRELUDE_RUNTIME: &str = include_str!("../assets/prelude.s");
 pub const PUTINT_RUNTIME: &str = include_str!("../assets/putint.s");
 
 const SNOBOL4_PHASE_BUDGET: u64 = 200_000_000;
 const INPUT_LOAD_ADDR: u32 = 0x090000;
 const PROGRAM_LOAD_ADDR: u32 = 0x080000;
+const PRELUDE_MARKER: &str = "; __RUNTIME_PRELUDE__";
 const PUTINT_MARKER: &str = "; __RUNTIME_PUTINT__";
 
 pub struct CompileResult {
@@ -132,7 +137,7 @@ pub fn compile(f_source: &str) -> CompileResult {
 
     if looks_like_asm(&emitted.output) {
         CompileResult {
-            asm: splice_putint(&emitted.output),
+            asm: splice_runtimes(&emitted.output),
             trace,
             error: None,
         }
@@ -197,25 +202,32 @@ fn run_phase(_name: &str, sno_program: &str, input: &[u8]) -> PhaseResult {
     }
 }
 
-/// Replace the `; __RUNTIME_PUTINT__` marker in emit_asm output with
-/// the bundled putint.s body. Equivalent to scripts/fortran's awk
-/// post-processing step. If the marker is absent (older emit_asm or a
-/// program that doesn't need PRINT int), pass the assembly through
-/// unchanged.
-fn splice_putint(asm: &str) -> String {
-    if !asm.contains(PUTINT_MARKER) {
-        return asm.to_string();
-    }
-    let mut out = String::with_capacity(asm.len() + PUTINT_RUNTIME.len());
+/// Replace the `; __RUNTIME_PRELUDE__` and `; __RUNTIME_PUTINT__`
+/// markers in emit_asm output with the bundled runtime files.
+/// Equivalent to scripts/fortran's awk post-processing step. Markers
+/// that aren't present pass through unchanged (older emit_asm builds
+/// without the split, or programs that don't need PRINT int).
+fn splice_runtimes(asm: &str) -> String {
+    let mut out =
+        String::with_capacity(asm.len() + PRELUDE_RUNTIME.len() + PUTINT_RUNTIME.len());
     for line in asm.lines() {
-        if line.trim() == PUTINT_MARKER {
-            out.push_str(PUTINT_RUNTIME);
-            if !PUTINT_RUNTIME.ends_with('\n') {
+        match line.trim() {
+            PRELUDE_MARKER => {
+                out.push_str(PRELUDE_RUNTIME);
+                if !PRELUDE_RUNTIME.ends_with('\n') {
+                    out.push('\n');
+                }
+            }
+            PUTINT_MARKER => {
+                out.push_str(PUTINT_RUNTIME);
+                if !PUTINT_RUNTIME.ends_with('\n') {
+                    out.push('\n');
+                }
+            }
+            _ => {
+                out.push_str(line);
                 out.push('\n');
             }
-        } else {
-            out.push_str(line);
-            out.push('\n');
         }
     }
     out

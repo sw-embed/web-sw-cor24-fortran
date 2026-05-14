@@ -1,32 +1,51 @@
 # Changelog
 
-## 2026-05-12 &mdash; Wire m4 + m5: integer PRINT, INTEGER decls, ASSIGN literal, PRINT var
+## 2026-05-13 &mdash; Wire m6-m9: all four pending demos now compile
 
-dcftn shipped two more milestones on top of m3-emit-hello:
+Upstream burst: dcftn shipped four milestones since yesterday's m5 refresh:
 
-- **m4-print-int** &mdash; `PRINT *, <integer-literal>` end-to-end. Required a new runtime helper (`snobol4/runtime/putint.s`) which `scripts/fortran` splices into the emit_asm output at a `; __RUNTIME_PUTINT__` marker. emit_asm can't emit `_putint` inline because doing so would push the SNOBOL4 program past dcsno's ~233-statement static-program-size limit.
-- **m5-print-var** &mdash; `INTEGER <name>` declarations, `<name> = <literal>` assignments, and `PRINT *, <name>` (integer variable).
+- **m6-assign-expr** &mdash; binary `+ - *` in `<name> = <expr>`. Plus a `runtime/prelude.s` split (the `_start / _halt / _putc / _puts` block moved out of `emit_asm.sno`'s inline OUTPUTs to keep the SNOBOL4 source under dcsno's ~230-statement static-program-size limit). Spliced into the assembly via a `; __RUNTIME_PRELUDE__` marker, same pattern as putint.
+- **m7-goto** &mdash; statement labels, `GOTO <label>`, `IF (expr) GOTO <label>`. `goto1.f` now compiles + assembles + runs end-to-end.
+- **m8-do-loop** &mdash; `DO <label> <var> = <start>, <stop>` / `CONTINUE`. `sum10.f` now works.
+- **m9-array** &mdash; `DIMENSION A(N)` reserves N words; array indexing in LHS, RHS, and PRINT. `array1.f` now works. New runtime helper `_aindex(base, idx)` is emitted inline.
 
-### What changed
+### What changed here
 
-- `assets/` &mdash; refreshed `normalize.sno`, `classify.sno`, `emit_asm.sno` from `sw-cor24-fortran/snobol4/src/`. Added `putint.s` from `sw-cor24-fortran/snobol4/runtime/`.
-- `src/compiler.rs` &mdash; after stage 1 emits assembly, splice `assets/putint.s` at the `; __RUNTIME_PUTINT__` marker. Mirrors the awk step at the end of upstream `scripts/fortran`.
-- `examples/` &mdash; added `print-int.f` and `print-var.f` (the new canonical demos for m4/m5).
-- `src/demos.rs` &mdash; **WORKING** now contains `hello.f`, `print-int.f`, `print-var.f` (three demos that compile + assemble + run end-to-end). **PENDING** still: `array1.f` (DIMENSION + arrays), `goto1.f` (GOTO + IF), `sum10.f` (DO loops + integer-expression ASSIGN).
-- `src/help.rs` &mdash; Reference tab asset table now lists `putint.s`; Usage tab updated to enumerate which kinds emit_asm now supports.
+- `assets/` &mdash; refreshed `normalize.sno`, `classify.sno`, `emit_asm.sno` from upstream `origin/dev` (emit_asm grew from 180 to 266 lines). Refreshed `putint.s`. **Added `prelude.s`** as a second spliced runtime. Refreshed `snobol4.lgo` (dcsno reshipped between m5 and m9).
+- `src/compiler.rs` &mdash; `splice_putint` is now `splice_runtimes` and handles both `; __RUNTIME_PRELUDE__` and `; __RUNTIME_PUTINT__` markers in a single pass.
+- `examples/` &mdash; added `add.f` (the canonical m6 demo: `A = 7; B = 13; C = A + B; PRINT *, C`).
+- `src/demos.rs` &mdash; all seven `.f` files in WORKING, ordered by milestone. PENDING is now empty (kept the slice for future use as new milestones arrive).
+- `src/main.rs` &mdash; demo dropdown collapses the "Awaiting upstream milestone" optgroup when PENDING is empty.
+- `src/help.rs` &mdash; Reference asset table lists `prelude.s`; Usage tab enumerates m3-m9 features and notes the seven demos all compile.
 
-## 2026-05-12 &mdash; Surface emit_asm `* WARN:` lines as compile errors
+### Demos that compile today
 
-`emit_asm.sno` writes malformation warnings with a `*` prefix (SNOBOL4 comment convention), but COR24-asm uses `;` for comments. Those lines previously broke stage 2 with a cryptic `label must be on its own line`. Now stage 1 detects them, names the specific unsupported statements, and explains which milestone they wait on. Stage 2 is not invoked when warns are present.
+| File | Milestone | Exercises |
+|---|---|---|
+| `hello.f` | m3 | PROGRAM / STOP / END + `PRINT *, 'string'` |
+| `print-int.f` | m4 | `PRINT *, 42` (integer literal) |
+| `print-var.f` | m5 | `INTEGER X`, `X = 42`, `PRINT *, X` |
+| `add.f` | m6 | `C = A + B` |
+| `goto1.f` | m7 | label `100` + `GOTO 100` + `IF (I - 6) GOTO 100` |
+| `sum10.f` | m8 | `DO 100 I = 1, 10` + `CONTINUE` |
+| `array1.f` | m9 | `DIMENSION A(5)` + `A(I) = I * 10` + `PRINT *, A(3)` |
 
-## 2026-05-12 &mdash; Split demos dropdown into Works today / Awaiting upstream
+## 2026-05-13 &mdash; Detect `; WARN:` (dcftn fixed `*` &rarr; `;`)
 
-Two `<optgroup>`s make the per-demo support state obvious at a glance. As dcftn ships milestones, demos graduate from PENDING to WORKING by moving one slice entry.
+`emit_asm.sno` switched the warning-comment prefix from `*` to `;` so partial assembly stays well-formed. Detector updated to accept both forms.
+
+## 2026-05-12 &mdash; Wire m4 + m5: integer PRINT, INTEGER decls, PRINT var
+
+`emit_asm.sno` shipped `PRINT *, <int literal>`, `INTEGER <name>`, `<name> = <literal>`, `PRINT *, <name>`. Plus the first runtime splice: `putint.s` at the `; __RUNTIME_PUTINT__` marker. Two new demos: `print-int.f`, `print-var.f`.
+
+## 2026-05-12 &mdash; Surface `* WARN:` as compile error; split demos dropdown
+
+Surfaces malformed-input warnings as friendly compile-stage errors instead of letting them break stage 2. Demos dropdown split into "Works today" / "Awaiting upstream milestone" optgroups.
 
 ## 2026-05-12 &mdash; Drop Path A; wire the real FTI-0 compiler chain
 
-dcftn shipped m2-classify and m3-emit-hello: the compiler is now a real three-phase SNOBOL4 pipeline (`normalize` &rarr; `classify` &rarr; `emit_asm`) that produces actual COR24 assembly. The Path-A short-circuit (which swapped in dcftn's hand-written `hello.s` for the canonical hello.f) is no longer needed. Stage 1 in `compiler.rs` is now three sequential `EmulatorCore` invocations mirroring `scripts/fortran` upstream.
+dcftn shipped m2-classify and m3-emit-hello: the compiler is now a real three-phase SNOBOL4 pipeline (`normalize` &rarr; `classify` &rarr; `emit_asm`). The Path-A short-circuit retired.
 
 ## 2026-05-08 &mdash; Initial release: FORTRAN Hello World on COR24
 
-First live demo of [`web-sw-cor24-fortran`](https://github.com/sw-embed/web-sw-cor24-fortran) deployed to <https://sw-embed.github.io/web-sw-cor24-fortran/>. Yew/WASM frontend that ran the early upstream toolchain in your browser. Initial architecture: nested `cor24-emulator` loaded `snobol4.lgo` and ran the `driver.sno` stub on user `.f`; a Path-A short-circuit swapped in dcftn's hand-written `hello.s` for the canonical hello.f. Multi-stage UI (Compile / Assemble / Run), editable source, demos dropdown, `[?]` Help modal. See `git log` for the rebuild history.
+First live demo of [`web-sw-cor24-fortran`](https://github.com/sw-embed/web-sw-cor24-fortran) deployed to <https://sw-embed.github.io/web-sw-cor24-fortran/>. Yew/WASM, three-stage UI (Compile / Assemble / Run), demos dropdown, `[?]` modal, cohort footer.
