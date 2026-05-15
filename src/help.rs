@@ -210,10 +210,6 @@ fn reference_content() -> Html {
                         <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/snobol4/src/classify.sno"}</code></td></tr>
                     <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"assets/emit_asm.sno"}</code></td>
                         <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/snobol4/src/emit_asm.sno"}</code></td></tr>
-                    <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"assets/prelude.s"}</code></td>
-                        <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/snobol4/runtime/prelude.s"}</code>{" (spliced at "}<code>{"; __RUNTIME_PRELUDE__"}</code>{"; _start / _halt / _putc / _puts)"}</td></tr>
-                    <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"assets/putint.s"}</code></td>
-                        <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/snobol4/runtime/putint.s"}</code>{" (spliced at "}<code>{"; __RUNTIME_PUTINT__"}</code>{")"}</td></tr>
                     <tr><td style="padding:6px 10px; border:1px solid #45475a;"><code>{"examples/*.f"}</code></td>
                         <td style="padding:6px 10px; border:1px solid #45475a;"><code>{"sw-cor24-fortran/examples"}</code></td></tr>
                 </tbody>

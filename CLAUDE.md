@@ -55,9 +55,23 @@ the short-circuit becomes irrelevant and goes away.
 | File | Source upstream | Refresh procedure |
 |---|---|---|
 | `assets/snobol4.lgo` | `work/lib/cor24/snobol4.lgo` (from dcsno) | `cp` from there |
-| `assets/fortran.sno` | `sw-cor24-fortran/snobol4/src/driver.sno` | `cp` from there (or whatever bundled form dcftn settles on) |
-| `assets/hello.s` | `sw-cor24-fortran/examples/hello.s` | `cp` from there |
-| `examples/*.f` | `sw-cor24-fortran/examples` | `cp` from there |
+| `assets/{normalize,classify,emit_asm}.sno` | `work/lib/cor24/fortran/snobol4/src/` | `cp` from there |
+| `examples/*.f` | `sw-cor24-fortran/examples` | `cp` from there (or `git show origin/dev:examples/...`) |
+
+As of dcftn m13-inline-runtime (2026-05-14), `emit_asm.sno` emits the
+full .s including the runtime support routines (`_start / _halt /
+_putc / _puts / _putint / _aindex`). No more `; __RUNTIME_PRELUDE__` /
+`; __RUNTIME_PUTINT__` marker splicing &mdash; that workaround was needed
+when emit_asm.sno hit dcsno's source-byte cap. dcsno's
+`pr/cap-and-pattern-fixes` bumped internal buffers; emit_asm now
+fits even at 18 KB+.
+
+Load-address convention (post-2026-05-14 dcsno):
+- compiler source @ `0xE0000` (was `0x080000`)
+- input data @ `0xF0000` (was `0x090000`)
+
+Hardcoded in `src/compiler.rs` as `PROGRAM_LOAD_ADDR` / `INPUT_LOAD_ADDR`.
+If dcsno migrates again, update those two constants.
 
 After refreshing assets, run `./scripts/build-pages.sh` to rebake
 `pages/` and commit.
