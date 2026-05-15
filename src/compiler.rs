@@ -3,18 +3,18 @@
 //!
 //!   user .f
 //!     |   nested cor24-emu loads snobol4.lgo,
-//!     |   loads normalize.sno @ 0x080000 and .f @ 0x090000,
+//!     |   loads normalize.sno @ 0xE0000 and .f @ 0xF0000,
 //!     |   runs -> emits normalized statement records via UART
 //!     v
 //!   normalized records
 //!     |   nested cor24-emu loads snobol4.lgo,
-//!     |   loads classify.sno @ 0x080000 and records @ 0x090000,
+//!     |   loads classify.sno @ 0xE0000 and records @ 0xF0000,
 //!     |   runs -> emits records with kind= field added
 //!     v
 //!   classified records
 //!     |   nested cor24-emu loads snobol4.lgo,
-//!     |   loads emit_asm.sno @ 0x080000 and records @ 0x090000,
-//!     |   runs -> emits COR24 assembly
+//!     |   loads emit_asm.sno @ 0xE0000 and records @ 0xF0000,
+//!     |   runs -> emits a complete .s including inlined runtime
 //!     v
 //!   .s assembly
 //!     |   cor24-assembler -> bytes + listing  (stage 2)
@@ -22,16 +22,18 @@
 //!     v
 //!   program output
 //!
-//! Each compiler phase is a separate `EmulatorCore` invocation that
-//! exactly mirrors what `scripts/fortran` does in `sw-cor24-fortran`
-//! (which runs three `snobol4 --load-binary <phase>.sno@0x080000
-//! --load-binary <data>@0x090000` commands).
+//! Each compiler phase mirrors `scripts/fortran` in `sw-cor24-fortran`.
 //!
-//! Today the chain handles only the FTI-0 subset that emit_asm.sno
-//! supports: PROGRAM / STOP / END boilerplate, and `PRINT *, 'string'`.
-//! As dcftn ships further phases (m4 adds integer PRINT, future
-//! milestones add DO / GOTO / IF / INTEGER / DIMENSION), refreshing
-//! `assets/*.sno` is the only change needed here.
+//! As of dcftn m13-inline-runtime, emit_asm.sno emits the full .s
+//! including the runtime support routines (_start / _halt / _putc /
+//! _puts / _putint / _aindex). The old `; __RUNTIME_PRELUDE__` /
+//! `; __RUNTIME_PUTINT__` marker splicing is gone -- emit_asm fits
+//! inside the SNOBOL4 source-buffer cap now that dcsno's
+//! `pr/cap-and-pattern-fixes` bumped internal limits.
+//!
+//! Refreshing `assets/{normalize,classify,emit_asm}.sno` + the
+//! `assets/snobol4.lgo` interpreter image is the only change needed
+//! here as dcftn ships further milestones.
 
 use cor24_assembler::{AssembledLine, Assembler};
 use cor24_emulator::{EmulatorCore, StopReason};
@@ -41,22 +43,15 @@ pub const NORMALIZE_SNO: &str = include_str!("../assets/normalize.sno");
 pub const CLASSIFY_SNO: &str = include_str!("../assets/classify.sno");
 pub const EMIT_ASM_SNO: &str = include_str!("../assets/emit_asm.sno");
 
-/// Runtime helpers spliced into the emit_asm output at marker lines.
-/// emit_asm.sno can't emit these inline because their combined
-/// ~120 OUTPUTs would push the SNOBOL4 program past dcsno's
-/// ~230-statement static-program-size limit. Mirrors the awk splice
-/// at the end of upstream `scripts/fortran`.
-///
-/// - prelude.s: _start, _halt, _putc, _puts  (at `; __RUNTIME_PRELUDE__`)
-/// - putint.s:  _putint                       (at `; __RUNTIME_PUTINT__`)
-pub const PRELUDE_RUNTIME: &str = include_str!("../assets/prelude.s");
-pub const PUTINT_RUNTIME: &str = include_str!("../assets/putint.s");
-
 const SNOBOL4_PHASE_BUDGET: u64 = 200_000_000;
-const INPUT_LOAD_ADDR: u32 = 0x090000;
-const PROGRAM_LOAD_ADDR: u32 = 0x080000;
-const PRELUDE_MARKER: &str = "; __RUNTIME_PRELUDE__";
-const PUTINT_MARKER: &str = "; __RUNTIME_PUTINT__";
+
+// Post-2026-05-14 dcsno load-address convention (was 0x080000 / 0x090000
+// pre `pr/cap-and-pattern-fixes`). The wrapper at `work/bin/snobol4`
+// is a compat shim that rewrites the old addresses to the new ones at
+// the CLI layer; we call EmulatorCore directly in WASM and so use
+// the canonical new addresses straight off.
+const PROGRAM_LOAD_ADDR: u32 = 0x0E0000;
+const INPUT_LOAD_ADDR: u32 = 0x0F0000;
 
 pub struct CompileResult {
     pub asm: String,
@@ -137,7 +132,7 @@ pub fn compile(f_source: &str) -> CompileResult {
 
     if looks_like_asm(&emitted.output) {
         CompileResult {
-            asm: splice_runtimes(&emitted.output),
+            asm: emitted.output,
             trace,
             error: None,
         }
@@ -200,37 +195,6 @@ fn run_phase(_name: &str, sno_program: &str, input: &[u8]) -> PhaseResult {
         instructions: emu.instructions_count(),
         stop_reason,
     }
-}
-
-/// Replace the `; __RUNTIME_PRELUDE__` and `; __RUNTIME_PUTINT__`
-/// markers in emit_asm output with the bundled runtime files.
-/// Equivalent to scripts/fortran's awk post-processing step. Markers
-/// that aren't present pass through unchanged (older emit_asm builds
-/// without the split, or programs that don't need PRINT int).
-fn splice_runtimes(asm: &str) -> String {
-    let mut out =
-        String::with_capacity(asm.len() + PRELUDE_RUNTIME.len() + PUTINT_RUNTIME.len());
-    for line in asm.lines() {
-        match line.trim() {
-            PRELUDE_MARKER => {
-                out.push_str(PRELUDE_RUNTIME);
-                if !PRELUDE_RUNTIME.ends_with('\n') {
-                    out.push('\n');
-                }
-            }
-            PUTINT_MARKER => {
-                out.push_str(PUTINT_RUNTIME);
-                if !PUTINT_RUNTIME.ends_with('\n') {
-                    out.push('\n');
-                }
-            }
-            _ => {
-                out.push_str(line);
-                out.push('\n');
-            }
-        }
-    }
-    out
 }
 
 fn looks_like_asm(s: &str) -> bool {
